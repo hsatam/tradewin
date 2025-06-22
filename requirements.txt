@@ -1,0 +1,14 @@
+kiteconnect==5.0.1
+pandas==2.2.3
+PyYAML==6.0.2
+Requests==2.32.3
+ta==0.11.0
+psycopg2-binary==2.9.9
+mplfinance~=0.12.10b0
+python-dotenv~=1.1.0
+fastapi~=0.115.12
+sqlalchemy~=2.0.41
+pydantic~=2.11.4
+asyncpg~=0.30.0
+joblib~=1.4.2
+numpy~=1.26.4
