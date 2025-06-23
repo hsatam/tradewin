@@ -411,6 +411,7 @@ class TradeManager:
             trade_date = df.iloc[-1]['date']
             self.atr = self.calculate_atr(df).iloc[-1] or self.atr
 
+            # Add monitoring logger
             logger.info("📈 Monitoring trade — Current price: %.2f | Stop Loss: %.2f", price, self.stop_loss)
 
             if self.reached_cutoff_time():
