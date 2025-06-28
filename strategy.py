@@ -62,8 +62,8 @@ class StrategyApplier:
                     low = morning_range['low'].min()
                     mask = df['date'].dt.date == date_val
 
-                    df.loc[mask, 'orb_long_entry'] = high + entry_buffer
-                    df.loc[mask, 'orb_short_entry'] = low - entry_buffer
+                    df.loc[mask, 'orb_long_entry'] = high + entry_buffer    # @TODO: Check if this needs to be (high + high * entry_buffer)
+                    df.loc[mask, 'orb_short_entry'] = low - entry_buffer    # @TODO: Check if this needs to be (low - low * entry_buffer)
                     df.loc[mask, 'orb_sl'] = np.maximum(20, df.loc[mask, 'ATR'] * sl_factor)
                     df.loc[mask, 'orb_target'] = df.loc[mask, 'orb_sl'] * target_factor
                 else:
@@ -152,8 +152,8 @@ class VWAPStrategy:
 
             if entry > threshold_above >= prev_close and entry > ema20:
                 dt = row['date']
-                sl = entry - self.sl_mult * atr
-                target = entry + self.target_mult * atr
+                sl = row['orb_sl']              # @TODO: Changed from entry - self.sl_mult * atr
+                target = row['orb_target']      # @TODO: Changed from entry + self.target_mult * atr
                 ok = (target - entry) >= self.rr_threshold * (entry - sl)
 
                 if (target - entry) < self.rr_threshold * (entry - sl):
@@ -179,8 +179,8 @@ class VWAPStrategy:
 
             if entry < threshold_below <= prev_close and entry < ema20:
                 dt = row['date']
-                sl = entry + self.sl_mult * atr
-                target = entry - self.target_mult * atr
+                sl = row['orb_sl']              # @TODO: Changed from entry + self.sl_mult * atr
+                target = row['orb_target']      # @TODO: Changed from entry - self.target_mult * atr
                 ok = (target - entry) < self.rr_threshold * (entry - sl)
 
                 if (entry - target) < self.rr_threshold * (sl - entry):
@@ -270,8 +270,8 @@ class ORBStrategy:
             if row['high'] >= long_entry and bullish:
                 dt = row['date']
                 entry = row['close']
-                sl = entry - atr * self.sl_factor
-                target = entry + (entry - sl) * self.target_factor
+                sl = row['orb_sl']              # @TODO: Changed from entry - atr * self.sl_factor
+                target = row['orb_target']      # @TODO: entry + (entry - sl) * self.target_factor
 
                 return {
                     "date":     dt,
@@ -287,8 +287,8 @@ class ORBStrategy:
             if row['low'] <= short_entry and bearish:
                 dt = row['date']
                 entry = row['close']
-                sl = short_entry + atr * self.sl_factor
-                target = short_entry - (sl - short_entry) * self.target_factor
+                sl = row['orb_sl']              # @TODO: short_entry + atr * self.sl_factor
+                target = row['orb_target']      # @TODO: short_entry - (sl - short_entry) * self.target_factor
 
                 return {
                     "date":     dt,
