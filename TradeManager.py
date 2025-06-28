@@ -280,7 +280,8 @@ class TradeManager:
         cooldown_period = pd.Timedelta(minutes=self.config.COOLDOWN_MINUTES)
         return (current_time - self.last_exit_time) < cooldown_period
 
-    def _handle_buy_trailing_sl(self, trade_date, current_price: float):
+    # @deprecated as on 28-JUN-2025
+    def _handle_buy_trailing_sl_deprecated(self, trade_date, current_price: float):
         """Adjust trailing stop-loss logic for BUY position."""
         half_target = abs(self.target_price - self.entry_price) * 0.3
         if current_price - self.entry_price < half_target:
@@ -297,7 +298,33 @@ class TradeManager:
                      current_price - max(distance, self.atr * self.atr_multiplier))
         self._maybe_update_sl(trade_date, candidate, current_price)
 
-    def _handle_sell_trailing_sl(self, trade_date, current_price: float):
+    def _handle_buy_trailing_sl(self, trade_date, current_price: float):
+        """Adjust trailing stop-loss logic for BUY position based on updated rules."""
+
+        # Rule 1: Ensure price has moved sufficiently
+        half_target = abs(self.target_price - self.entry_price) * 0.3
+        if current_price - self.entry_price < half_target:
+            logger.debug("BUY price hasn't moved more than 30%; no SL update.")
+            return
+
+        if current_price - self.entry_price < self.atr:
+            logger.debug("BUY price hasn't moved beyond ATR; no SL update.")
+            return
+
+        # Rule 2: Compute candidate SL as ATR-adjusted
+        new_sl = current_price - self.atr * self.atr_multiplier
+
+        # Rule 3 & 4: Decide whether to accept new SL or fallback to price - 100
+        if new_sl >= self.stop_loss:
+            candidate_sl = new_sl
+        else:
+            candidate_sl = current_price - 100
+
+        # Update SL if it passes internal validation
+        self._maybe_update_sl(trade_date, candidate_sl, current_price)
+
+    # @deprecated as on 28-JUN-2025
+    def _handle_sell_trailing_sl_deprecated(self, trade_date, current_price: float):
         """Adjust trailing stop-loss logic for SELL position."""
         threshold = self.atr
         if self.entry_price - current_price < threshold:
@@ -309,6 +336,31 @@ class TradeManager:
                      if distance > threshold * 1.5 else
                      current_price + max(distance, self.atr * self.atr_multiplier))
         self._maybe_update_sl(trade_date, candidate, current_price)
+
+    def _handle_sell_trailing_sl(self, trade_date, current_price: float):
+        """Adjust trailing stop-loss logic for SELL position based on updated rules."""
+
+        # Rule 1: Ensure price has moved down sufficiently
+        half_target = abs(self.entry_price - self.target_price) * 0.3
+        if self.entry_price - current_price < half_target:
+            logger.debug("SELL price hasn't moved more than 30%; no SL update.")
+            return
+
+        if self.entry_price - current_price < self.atr:
+            logger.debug("SELL price hasn't moved beyond ATR; no SL update.")
+            return
+
+        # Rule 2: Compute candidate SL as ATR-adjusted
+        new_sl = current_price + self.atr * self.atr_multiplier
+
+        # Rule 3 & 4: Decide whether to accept new SL or fallback
+        if new_sl <= self.stop_loss:
+            candidate_sl = new_sl
+        else:
+            candidate_sl = current_price + 100
+
+        # Update SL if valid
+        self._maybe_update_sl(trade_date, candidate_sl, current_price)
 
     def _maybe_update_sl(self, trade_date, new_sl: float, current_price: float):
         """Update stop-loss if changed and log to DB."""
