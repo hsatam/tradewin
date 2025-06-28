@@ -58,7 +58,7 @@ def run_live_trading(config, kite):
                         trade_manager.atr = last_row['ATR']
                         trade_manager.place_order(trade_date, trade_signal, trade_price,
                                                   trade_sl, strategy,
-                                                  (max(1, int(margins // 250000)) * (config.TRADE_QTY // 30)))
+                                                  (max(1, int(margins // 250000)) * (config.TRADE_QTY // 35)))
                         trade_manager.monitor_trade(market_data.get_data, interval=60)
                     else:
                         logger.info("No BUY / SELL Signal...")
