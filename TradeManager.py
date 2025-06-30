@@ -315,10 +315,15 @@ class TradeManager:
         new_sl = current_price - self.atr * self.atr_multiplier
 
         # Rule 3 & 4: Decide whether to accept new SL or fallback to price - 100
+        # Added logic (fallback_sl) for sideways market
+        fallback_sl = current_price - 100
         if new_sl >= self.stop_loss:
             candidate_sl = new_sl
+        elif fallback_sl > self.stop_loss:
+            candidate_sl = fallback_sl
         else:
-            candidate_sl = current_price - 100
+            logger.debug("Trailing SL unchanged. Both new and fallback SL are below current SL.")
+            return
 
         # Update SL if it passes internal validation
         self._maybe_update_sl(trade_date, candidate_sl, current_price)
@@ -353,11 +358,16 @@ class TradeManager:
         # Rule 2: Compute candidate SL as ATR-adjusted
         new_sl = current_price + self.atr * self.atr_multiplier
 
-        # Rule 3 & 4: Decide whether to accept new SL or fallback
+        # Rule 3 & 4: Decide whether to accept new SL or fallback to price + 100
+        # Added logic (fallback_sl) for sideways market
+        fallback_sl = current_price + 100
         if new_sl <= self.stop_loss:
             candidate_sl = new_sl
+        elif fallback_sl < self.stop_loss:
+            candidate_sl = fallback_sl
         else:
-            candidate_sl = current_price + 100
+            logger.debug("Trailing SL unchanged. Both new and fallback SL are above current SL.")
+            return
 
         # Update SL if valid
         self._maybe_update_sl(trade_date, candidate_sl, current_price)
