@@ -312,7 +312,7 @@ class TradeManager:
             return
 
         # Rule 2: Compute candidate SL as ATR-adjusted
-        new_sl = (current_price - self.atr) * self.atr_multiplier
+        new_sl = current_price - ((current_price - self.atr) * self.atr_multiplier)
 
         # Rule 3 & 4: Decide whether to accept new SL or fallback to price - 100
         # Added logic (fallback_sl) for sideways market
@@ -356,7 +356,7 @@ class TradeManager:
             return
 
         # Rule 2: Compute candidate SL as ATR-adjusted
-        new_sl = (current_price + self.atr) * self.atr_multiplier
+        new_sl = current_price + ((current_price + self.atr) * self.atr_multiplier)
 
         # Rule 3 & 4: Decide whether to accept new SL or fallback to price + 100
         # Added logic (fallback_sl) for sideways market
