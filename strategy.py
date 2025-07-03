@@ -270,8 +270,8 @@ class ORBStrategy:
             if row['high'] >= long_entry and bullish:
                 dt = row['date']
                 entry = row['close']
-                sl = row['orb_sl']              # @TODO: Changed from entry - atr * self.sl_factor
-                target = row['orb_target']      # @TODO: entry + (entry - sl) * self.target_factor
+                sl = entry - row['orb_sl']              # @TODO: Changed from entry - atr * self.sl_factor
+                target = entry + row['orb_target']      # @TODO: entry + (entry - sl) * self.target_factor
 
                 return {
                     "date":     dt,
@@ -287,8 +287,8 @@ class ORBStrategy:
             if row['low'] <= short_entry and bearish:
                 dt = row['date']
                 entry = row['close']
-                sl = row['orb_sl']              # @TODO: short_entry + atr * self.sl_factor
-                target = row['orb_target']      # @TODO: short_entry - (sl - short_entry) * self.target_factor
+                sl = entry + row['orb_sl']              # @TODO: short_entry + atr * self.sl_factor
+                target = entry - row['orb_target']      # @TODO: short_entry - (sl - short_entry) * self.target_factor
 
                 return {
                     "date":     dt,
