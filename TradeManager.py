@@ -153,6 +153,7 @@ class TradeManager:
         self.open_trade = False
         self.strategy = None
         self.current_trade_id = None
+        self.last_sl_update_time = None
 
         # ATR indicator
         self.atr = 0.0
@@ -312,7 +313,7 @@ class TradeManager:
             return
 
         # Rule 2: Compute candidate SL as ATR-adjusted
-        new_sl = current_price - ((current_price - self.atr) * self.atr_multiplier)
+        new_sl = current_price - (self.atr * self.atr_multiplier)
 
         # Rule 3 & 4: Decide whether to accept new SL or fallback to price - 100
         # Added logic (fallback_sl) for sideways market
@@ -356,7 +357,7 @@ class TradeManager:
             return
 
         # Rule 2: Compute candidate SL as ATR-adjusted
-        new_sl = current_price + ((current_price + self.atr) * self.atr_multiplier)
+        new_sl = current_price + (self.atr * self.atr_multiplier)
 
         # Rule 3 & 4: Decide whether to accept new SL or fallback to price + 100
         # Added logic (fallback_sl) for sideways market
@@ -375,8 +376,9 @@ class TradeManager:
     def _maybe_update_sl(self, trade_date, new_sl: float, current_price: float):
         """Update stop-loss if changed and log to DB."""
         new_sl_rounded = round(new_sl, 2)
+        self.last_sl_update_time = trade_date
         if new_sl_rounded == self.stop_loss or abs(new_sl_rounded - self.stop_loss) < 0.01:
-            logger.debug("Current price : %s - Trailing SL unchanged at %s", current_price, self.stop_loss)
+            logger.debug("📈 Monitoring trade — Current price: %s - Trailing SL unchanged at %s", current_price, self.stop_loss)
             return
 
         # Prevent SL reduction for BUY or increase for SELL
@@ -388,7 +390,7 @@ class TradeManager:
             return
 
         self.stop_loss = new_sl_rounded
-        logger.info("Current price : %s - Trailing SL adjusted to %s", current_price, self.stop_loss)
+        logger.info("📈 Monitoring trade — Current price: %s - Trailing SL adjusted to %s", current_price, self.stop_loss)
         self._record_trade(self._prepare_trade_data(trade_date, self.position, self.entry_price,
                                                     self.stop_loss, exited=False, notes="SL adjusted"))
 
@@ -410,17 +412,23 @@ class TradeManager:
                                close=data['close'], window=period)
         return atr.average_true_range()
 
-    def should_exit_price(self, high: float, low: float) -> tuple[bool, str]:
+    def should_exit_price(self, high: float, low: float, price: float, trade_time=None) -> tuple[bool, str]:
+        """Check if SL or target is hit. Avoid checking SL if trade just placed."""
+        if trade_time and (trade_time - self.entry_time).seconds < 60:
+            return False, "Trade just placed"
+
         """
         Determine if stop-loss or target hit, returning exit flag and reason.
         """
-        if self.position == "BUY" and low <= self.stop_loss:
+        if self.position == "BUY" and low > self.stop_loss and high >= self.target_price:
+            return False, "Profit zone — SL should not trigger"
+        if self.position == "BUY" and price <= self.stop_loss:
             return True, "Stop-loss hit."
-        if self.position == "SELL" and high >= self.stop_loss:
+        if self.position == "SELL" and price >= self.stop_loss:
             return True, "Stop-loss hit."
-        if high >= self.target_price and self.position == "BUY":
+        if price >= self.target_price and self.position == "BUY":
             return False, "Target hit BUY."
-        if low <= self.target_price and self.position == "SELL":
+        if price <= self.target_price and self.position == "SELL":
             return False, "Target hit SELL."
         return False, ""
 
@@ -455,6 +463,30 @@ class TradeManager:
             return False
         return datetime.now().time() >= dtime(15, 25)
 
+    def _check_stall_exit(self, df: pd.DataFrame) -> tuple[bool, str]:
+        """
+        Exit if price moved > 3×ATR in favour but then stalled for 5+ candles.
+        """
+        if len(df) < 6:
+            return False, ""
+
+        recent = df.iloc[-6:]  # Last 6 candles including current
+        candle_ranges = recent['high'] - recent['low']
+        avg_range = candle_ranges.mean()
+
+        current_price = recent.iloc[-1]['close']
+        price_move = abs(current_price - self.entry_price)
+
+        if self.position == "SELL":
+            price_move = self.entry_price - current_price
+        elif self.position == "BUY":
+            price_move = current_price - self.entry_price
+
+        if price_move >= 3 * self.atr and avg_range < 0.2 * self.atr:
+            return True, "Profit stall after 3×ATR move"
+
+        return False, ""
+
     def monitor_trade(self, get_data_func, interval: int = 60):
         """
         Poll live data, update ATR, check exit conditions and SL.
@@ -473,6 +505,12 @@ class TradeManager:
             trade_date = df.iloc[-1]['date']
             self.atr = self.calculate_atr(df).iloc[-1] or self.atr
 
+            # Skip exit check for 1 candle after SL adjustment
+            if self.last_sl_update_time == trade_date:
+                logger.debug("Skipping SL check to allow new SL to settle.")
+                time.sleep(interval)
+                continue
+
             # Add monitoring logger
             logger.info("📈 Monitoring trade — Current price: %.2f | Stop Loss: %.2f", price, self.stop_loss)
 
@@ -480,13 +518,22 @@ class TradeManager:
                 self.exit_with_reason(price, "Market cutoff reached.")
                 break
 
-            self.check_trailing_sl(trade_date, price)
-            exit_flag, reason = self.should_exit_price(high=high, low=low)
+            exit_flag, reason = self.should_exit_price(high=high, low=low, price=price, trade_time=trade_date)
             if exit_flag:
                 self.exit_with_reason(price, reason)
                 logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
                 time.sleep(self.config.COOLDOWN_MINUTES * 60)
                 break
+
+            if not exit_flag:
+                stall_flag, stall_reason = self._check_stall_exit(df)
+                if stall_flag:
+                    self.exit_with_reason(price, stall_reason)
+                    logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
+                    time.sleep(self.config.COOLDOWN_MINUTES * 60)
+                    break
+
+            self.check_trailing_sl(trade_date, price)
 
             time.sleep(interval)
 
