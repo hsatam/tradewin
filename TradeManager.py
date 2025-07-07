@@ -317,10 +317,10 @@ class TradeManager:
 
         # Rule 3 & 4: Decide whether to accept new SL or fallback to price - 100
         # Added logic (fallback_sl) for sideways market
-        fallback_sl = current_price - 100
+        fallback_sl = current_price - 50
         if new_sl >= self.stop_loss:
             candidate_sl = new_sl
-        elif fallback_sl > self.stop_loss:
+        elif fallback_sl > self.stop_loss and (trade_date - self.entry_time).seconds > 600:
             candidate_sl = fallback_sl
         else:
             logger.debug("Trailing SL unchanged. Both new and fallback SL are below current SL.")
@@ -361,10 +361,10 @@ class TradeManager:
 
         # Rule 3 & 4: Decide whether to accept new SL or fallback to price + 100
         # Added logic (fallback_sl) for sideways market
-        fallback_sl = current_price + 100
+        fallback_sl = current_price + 50
         if new_sl <= self.stop_loss:
             candidate_sl = new_sl
-        elif fallback_sl < self.stop_loss:
+        elif fallback_sl < self.stop_loss and (trade_date - self.entry_time).seconds > 600:
             candidate_sl = fallback_sl
         else:
             logger.debug("Trailing SL unchanged. Both new and fallback SL are above current SL.")
@@ -487,6 +487,22 @@ class TradeManager:
 
         return False, ""
 
+    # Stall-Based Exit Logic
+    def _check_sideways_stall_exit(self, df: pd.DataFrame) -> tuple[bool, str]:
+        """
+        Exit if price stays in a narrowband (<15 points) for 6+ consecutive candles after trade entry.
+        """
+        if len(df) < 6 or self.entry_time is None:
+            return False, "Not a Sideways Market Stall"
+
+        recent = df.iloc[-6:]
+        band_range = recent['close'].max() - recent['close'].min()
+
+        if band_range < 15:
+            return True, "Sideways stall: Price stuck in narrow range."
+
+        return False, "Not a Sideways Market Stall"
+
     def monitor_trade(self, get_data_func, interval: int = 60):
         """
         Poll live data, update ATR, check exit conditions and SL.
@@ -529,6 +545,14 @@ class TradeManager:
                 stall_flag, stall_reason = self._check_stall_exit(df)
                 if stall_flag:
                     self.exit_with_reason(price, stall_reason)
+                    logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
+                    time.sleep(self.config.COOLDOWN_MINUTES * 60)
+                    break
+
+                # Add sideways stall check
+                sideways_flag, sideways_reason = self._check_sideways_stall_exit(df)
+                if sideways_flag:
+                    self.exit_with_reason(price, sideways_reason)
                     logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
                     time.sleep(self.config.COOLDOWN_MINUTES * 60)
                     break
