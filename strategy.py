@@ -126,17 +126,6 @@ class VWAPStrategy:
                     "strategy": None
                 }
 
-            if candle_range < 5 or body < 0.2 * candle_range:
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
-
             if any(pd.isna([vwap, atr, row['RSI14'], ema20, prev_close])):
                 return {
                     "date":     None,
