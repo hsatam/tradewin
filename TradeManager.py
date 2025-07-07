@@ -468,24 +468,31 @@ class TradeManager:
         Exit if price moved > 3×ATR in favour but then stalled for 5+ candles.
         """
         if len(df) < 6:
-            return False, ""
+            return False, "No Stalling seen"
 
-        recent = df.iloc[-6:]  # Last 6 candles including current
-        candle_ranges = recent['high'] - recent['low']
-        avg_range = candle_ranges.mean()
+        recent = df.iloc[-6:]
+        avg_range = (recent['high'] - recent['low']).mean()
 
         current_price = recent.iloc[-1]['close']
         price_move = abs(current_price - self.entry_price)
 
         if self.position == "SELL":
             price_move = self.entry_price - current_price
-        elif self.position == "BUY":
-            price_move = current_price - self.entry_price
+            peak_price = df[df['date'] >= self.entry_time]['low'].min()
+            retrace = current_price - peak_price
+            move_from_entry = self.entry_price - peak_price
+        else:
+            peak_price = df[df['date'] >= self.entry_time]['high'].max()
+            retrace = peak_price - current_price
+            move_from_entry = peak_price - self.entry_price
 
-        if price_move >= 3 * self.atr and avg_range < 0.2 * self.atr:
+        if move_from_entry >= 3 * self.atr and avg_range < 0.2 * self.atr:
             return True, "Profit stall after 3×ATR move"
 
-        return False, ""
+        if move_from_entry >= 3 * self.atr and retrace > 0.4 * move_from_entry:
+            return True, "Profit retracement > 40% after large move"
+
+        return False, "No Stalling seen"
 
     # Stall-Based Exit Logic
     def _check_sideways_stall_exit(self, df: pd.DataFrame) -> tuple[bool, str]:
