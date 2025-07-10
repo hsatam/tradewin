@@ -226,6 +226,21 @@ class ORBStrategy:
 
     def evaluate(self, row):
         try:
+            body = abs(row['close'] - row['open'])
+            candle_range = row['high'] - row['low']
+
+            if candle_range < 5 or body < 0.25 * candle_range:
+                # Skip weak candles
+                return {
+                    "date":     None,
+                    "signal":   None,
+                    "entry":    None,
+                    "sl":       None,
+                    "target":   None,
+                    "valid":    False,
+                    "strategy": None
+                }
+
             current_time = row['date'].time()
             if not (dt_time(9, 30) <= current_time <= dt_time(15, 25)):
                 return {
@@ -257,21 +272,6 @@ class ORBStrategy:
             short_entry = row['orb_short_entry']
 
             if pd.isna(long_entry) or pd.isna(short_entry):
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
-
-            body = abs(row['close'] - row['open'])
-            candle_range = row['high'] - row['low']
-
-            if candle_range < 5 or body < 0.25 * candle_range:
-                # Skip weak candles
                 return {
                     "date":     None,
                     "signal":   None,
