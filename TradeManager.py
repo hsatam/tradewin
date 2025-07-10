@@ -312,6 +312,12 @@ class TradeManager:
             logger.debug("BUY price hasn't moved beyond ATR; no SL update.")
             return
 
+        if current_price - self.entry_price >= 1.5 * self.atr:
+            logger.debug("Force trailing SL due to >1.5×ATR move.")
+            candidate_sl = current_price - self.atr * self.atr_multiplier
+            self._maybe_update_sl(trade_date, candidate_sl, current_price)
+            return
+
         # Rule 2: Compute candidate SL as ATR-adjusted
         new_sl = current_price - (self.atr * self.atr_multiplier)
 
@@ -354,6 +360,12 @@ class TradeManager:
 
         if self.entry_price - current_price < self.atr:
             logger.debug("SELL price hasn't moved beyond ATR; no SL update.")
+            return
+
+        if self.entry_price - current_price >= 1.5 * self.atr:
+            logger.debug("Force trailing SL due to >1.5×ATR move.")
+            candidate_sl = current_price + self.atr * self.atr_multiplier
+            self._maybe_update_sl(trade_date, candidate_sl, current_price)
             return
 
         # Rule 2: Compute candidate SL as ATR-adjusted
@@ -489,8 +501,8 @@ class TradeManager:
         if move_from_entry >= 3 * self.atr and avg_range < 0.2 * self.atr:
             return True, "Profit stall after 3×ATR move"
 
-        if move_from_entry >= 3 * self.atr and retrace > 0.4 * move_from_entry:
-            return True, "Profit retracement > 40% after large move"
+        if move_from_entry >= 2 * self.atr and retrace > 0.5 * move_from_entry:
+            return True, "Profit retracement > 50% after large move"
 
         return False, "No Stalling seen"
 
