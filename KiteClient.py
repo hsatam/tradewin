@@ -1,7 +1,7 @@
 import os
 from kiteconnect import KiteConnect
 from log_config import get_logger
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 class KiteClient:

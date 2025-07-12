@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from datetime import time as dt_time
 from log_config import get_logger
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 ORB_WINDOW_START = dt_time(9, 15)

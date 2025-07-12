@@ -6,7 +6,7 @@ from strategy import ORBStrategy, VWAPStrategy
 from strategy import IndicatorCalculator, StrategyApplier
 
 from log_config import get_logger
-logger = get_logger(__name__)
+logger = get_logger()
 
 # Constants
 ORB_WINDOW_START = dt_time(9, 15)

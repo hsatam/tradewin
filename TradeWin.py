@@ -9,7 +9,7 @@ import argparse
 import traceback
 from backtester import Backtester, get_strategy_class
 from log_config import get_logger
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 def run_live_trading(config, kite):

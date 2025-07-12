@@ -13,8 +13,7 @@ import time
 from zoneinfo import ZoneInfo
 
 from log_config import get_logger
-
-logger = get_logger(__name__)
+logger = get_logger()
 
 
 class DBHandler:

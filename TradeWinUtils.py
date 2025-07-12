@@ -1,6 +1,7 @@
 from datetime import datetime, time as dtime, date
 from log_config import get_logger
-logger = get_logger(__name__)
+
+logger = get_logger()
 
 
 # Manually maintained list of Indian stock market holidays (NSE/BSE)
