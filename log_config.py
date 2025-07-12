@@ -22,7 +22,7 @@ class TelegramLogHandler(logging.Handler):
             print(f"Failed to send log to Telegram: {e}")
 
 
-def get_logger(name: str):
+def get_logger(name: str = "TradeWinGlobal"):
     global _logger_instance
     if _logger_instance is not None:
         return _logger_instance
