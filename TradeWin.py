@@ -11,10 +11,13 @@ from backtester import Backtester, get_strategy_class
 from log_config import get_logger
 logger = get_logger(__name__)
 
-margins = 250000
-
 
 def run_live_trading(config, kite):
+
+    equity = kite.margins("equity")
+    margins = equity["available"]["cash"]
+    logger.info(f"Initiating trading with capital of ₹{round(margins,2):.2f}")
+
     market_data = MarketData(kite=kite, retries=5, backoff=2, entry_buffer=config.entry_buffer,
                              sl_factor=config.sl_factor, target_factor=config.target_factor)
     trade_manager = TradeManager(kite=kite, margins=margins)
@@ -85,7 +88,7 @@ def run_live_trading(config, kite):
 def run_backtest(config, kite):
 
     # @TODO: Do Not take trades consecutively - have a cool down period.
-
+    margins = 250000
     file_path = "nifty_bank_5min_15yr.csv"
 
     market_data = MarketData(kite=kite, retries=5, backoff=2)
