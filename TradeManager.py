@@ -329,11 +329,11 @@ class TradeManager:
             logger.debug("BUY price hasn't moved sufficiently; no SL update.")
             return
 
-        fallback_sl = current_price - (30 if age_seconds > 1800 else 50)
+        fallback_sl = current_price - (50 if age_seconds > 1800 else self.atr)
         new_sl = current_price - (self.atr * self.atr_multiplier)
 
-        if move >= 1.5 * self.atr:
-            logger.debug("Force SL trail due to >1.5x ATR move.")
+        if move >= 1.0 * self.atr:
+            logger.debug("Force SL trail due to >1.0x ATR move.")
             self._maybe_update_sl(trade_date, new_sl, current_price)
             return
 
@@ -391,11 +391,11 @@ class TradeManager:
             logger.debug("SELL price hasn't moved sufficiently; no SL update.")
             return
 
-        fallback_sl = current_price + (30 if age_seconds > 1800 else 50)
+        fallback_sl = current_price + (50 if age_seconds > 1800 else self.atr)
         new_sl = current_price + (self.atr * self.atr_multiplier)
 
-        if move >= 1.5 * self.atr:
-            logger.debug("Force SL trail due to >1.5x ATR move.")
+        if move >= 1.0 * self.atr:
+            logger.debug("Force SL trail due to >1.0x ATR move.")
             self._maybe_update_sl(trade_date, new_sl, current_price)
             return
 
