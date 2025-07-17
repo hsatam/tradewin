@@ -216,8 +216,9 @@ class TradeManager:
 
         # Compute target and ATR
         self.atr = self.atr or 20
-        self.target_price = (self.entry_price + 2 * self.atr
-                             if action == "BUY" else self.entry_price - 2 * self.atr)
+        self._adjust_dynamic_sl_target()
+        # self.target_price = (self.entry_price + 2 * self.atr
+        #                      if action == "BUY" else self.entry_price - 2 * self.atr)
 
         logger.info("🆕 Placing %s order at %.2f with SL %.2f", action, price, stoploss)
 
@@ -238,6 +239,28 @@ class TradeManager:
                 price=0,
                 trigger_price=round(self.stop_loss, 1)
             )
+
+    def _adjust_dynamic_sl_target(self):
+        """
+        Recommendation #6: Dynamically adjust SL and target factor based on recent ATR
+        """
+        recent_atrs = [self.atr]
+        if hasattr(self, 'atr_history'):
+            recent_atrs += self.atr_history[-20:]
+        else:
+            self.atr_history = []
+
+        self.atr_history.append(self.atr)
+        median_atr = sorted(self.atr_history)[len(self.atr_history) // 2] if self.atr_history else self.atr
+
+        if self.atr < median_atr:
+            # Low volatility: tighten targets
+            self.atr_multiplier = 0.5
+            self.target_price = self.entry_price - 1.8 * self.atr if self.position == "SELL" else self.entry_price + 1.8 * self.atr
+        else:
+            # High volatility: allow wider SL/target
+            self.atr_multiplier = 0.7
+            self.target_price = self.entry_price - 2.5 * self.atr if self.position == "SELL" else self.entry_price + 2.5 * self.atr
 
     def exit_trade(self, price: float):
         """
@@ -584,18 +607,18 @@ class TradeManager:
                 time.sleep(self.config.COOLDOWN_MINUTES * 60)
                 break
 
+            # Add sideways stall check
+            sideways_flag, sideways_reason = self._check_sideways_stall_exit(df)
+            if sideways_flag:
+                self.exit_with_reason(price, sideways_reason)
+                logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
+                time.sleep(self.config.COOLDOWN_MINUTES * 60)
+                break
+
             if not exit_flag:
                 stall_flag, stall_reason = self._check_stall_exit(df)
                 if stall_flag:
                     self.exit_with_reason(price, stall_reason)
-                    logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
-                    time.sleep(self.config.COOLDOWN_MINUTES * 60)
-                    break
-
-                # Add sideways stall check
-                sideways_flag, sideways_reason = self._check_sideways_stall_exit(df)
-                if sideways_flag:
-                    self.exit_with_reason(price, sideways_reason)
                     logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
                     time.sleep(self.config.COOLDOWN_MINUTES * 60)
                     break
