@@ -153,6 +153,7 @@ class TradeManager:
         self.strategy = None
         self.current_trade_id = None
         self.last_sl_update_time = None
+        self.last_exit_price = None
 
         # ATR indicator
         self.atr = 0.0
@@ -260,11 +261,13 @@ class TradeManager:
         if self.atr < median_atr:
             # Low volatility: tighten targets
             self.atr_multiplier = 0.5
-            self.target_price = self.entry_price - 1.8 * self.atr if self.position == "SELL" else self.entry_price + 1.8 * self.atr
+            self.target_price = self.entry_price - 1.8 * self.atr if self.position == "SELL" else \
+                self.entry_price + 1.8 * self.atr
         else:
             # High volatility: allow wider SL/target
             self.atr_multiplier = 0.7
-            self.target_price = self.entry_price - 2.5 * self.atr if self.position == "SELL" else self.entry_price + 2.5 * self.atr
+            self.target_price = self.entry_price - 2.5 * self.atr if self.position == "SELL" else \
+                self.entry_price + 2.5 * self.atr
 
     def exit_trade(self, price: float):
         """
@@ -278,6 +281,7 @@ class TradeManager:
         self.margins += pnl
 
         TradeWinUtils.log_trade(self.position, price, pnl)
+        self.last_exit_price = price
 
         data = self._prepare_trade_data(self.trade_date, self.position, self.entry_price, self.stop_loss,
                                         exited=True, notes="Trade exited", exit_price=price,
