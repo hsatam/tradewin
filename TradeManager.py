@@ -203,6 +203,12 @@ class TradeManager:
                            max_allowed_lots)
             lots = max_allowed_lots
 
+        # Add to avoid same-zone reentry
+        if self.last_exit_time and abs(price - self.last_exit_price) < 0.5 * self.atr:
+            if (trade_date - self.last_exit_time).seconds < 900:
+                logger.warning("Avoiding re-entry in same zone too soon.")
+                return
+
         # Set state
         self.trade_date = trade_date
         self.position = action
@@ -217,8 +223,6 @@ class TradeManager:
         # Compute target and ATR
         self.atr = self.atr or 20
         self._adjust_dynamic_sl_target()
-        # self.target_price = (self.entry_price + 2 * self.atr
-        #                      if action == "BUY" else self.entry_price - 2 * self.atr)
 
         logger.info("🆕 Placing %s order at %.2f with SL %.2f", action, price, stoploss)
 
@@ -545,8 +549,8 @@ class TradeManager:
             retrace = peak_price - current_price
             move_from_entry = peak_price - self.entry_price
 
-        if move_from_entry >= 3 * self.atr and avg_range < 0.2 * self.atr:
-            return True, "Profit stall after 3×ATR move"
+        if move_from_entry >= 2.5 * self.atr and avg_range < 0.25 * self.atr:
+            return True, "Profit stall after 2.5×ATR move"
 
         if move_from_entry >= 2 * self.atr and retrace > 0.5 * move_from_entry:
             return True, "Profit retracement > 50% after large move"
