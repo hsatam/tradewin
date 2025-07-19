@@ -10,7 +10,7 @@ class KiteClient:
         self.api_secret = api_secret
         self.token_file = token_file
         self.kite = KiteConnect(api_key=self.api_key)
-        self.kite.set_session_expiry_hook(lambda: logger.info("Session expired"))
+        self.kite.set_session_expiry_hook(lambda: logger.info("🔒 Kite Session expired."))
 
     def _get_saved_token(self):
         if os.path.exists(self.token_file):
@@ -23,21 +23,29 @@ class KiteClient:
             f.write(token)
 
     def authenticate(self):
-        request_token = self._get_saved_token()
-        if not request_token:
-            logger.info("🔐 Please visit the following URL to get your request token:")
-            logger.info(f"https://kite.zerodha.com/connect/login?v=3&api_key={self.api_key}")
-            request_token = input("Paste the REQUEST_TOKEN here: ").strip()
-            self._save_token(request_token)
+        access_token = self._get_saved_token()
+        if access_token:
+            self.kite.set_access_token(access_token)
+            try:
+                self.kite.profile()  # ping to verify
+                logger.info("✅ Reused existing access token successfully.")
+                return self.kite
+            except Exception as e:
+                logger.warning(f"⚠️ Access token invalid or expired: {e}")
+
+        # Step 1: Ask for request token
+        login_url = self.kite.login_url()
+        logger.info("🔐 Please visit the following URL to login and obtain your request token:")
+        logger.info(login_url)
+        request_token = input("Paste the REQUEST_TOKEN here: ").strip()
 
         try:
             session_data = self.kite.generate_session(request_token, api_secret=self.api_secret)
-        except Exception:
-            logger.info("🔐 Please visit the following URL to get your request token:")
-            logger.info(f"https://kite.zerodha.com/connect/login?v=3&api_key={self.api_key}")
-            request_token = input("Paste the REQUEST_TOKEN here: ").strip()
-            self._save_token(request_token)
-            session_data = self.kite.generate_session(request_token, api_secret=self.api_secret)
-
-        self.kite.set_access_token(session_data['access_token'])
-        return self.kite
+            access_token = session_data['access_token']
+            self.kite.set_access_token(access_token)
+            self._save_token(access_token)
+            logger.info("✅ New access token generated and saved.")
+            return self.kite
+        except Exception as e:
+            logger.error(f"❌ Failed to generate session: {e}")
+            raise
