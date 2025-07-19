@@ -15,9 +15,12 @@ logger = get_logger()
 
 def run_live_trading(live_config, live_kite):
 
-    equity = live_kite.margins("equity")
-    margins = equity["available"]["cash"]
-    logger.info(f"Initiating trading with capital of ₹{round(margins,2):.2f}")
+    try:
+        margins = live_kite.margins()["equity"]["available"]["cash"]
+        logger.info(f"Initiating trading with capital of ₹{round(margins,2):.2f}")
+    except Exception as e:
+        logger.warning(f"⚠️ RMS Margin API failed: {e}")
+        margins = 250000  # fallback assumption
 
     market_data = MarketData(kite=live_kite, retries=5, backoff=2, entry_buffer=live_config.entry_buffer,
                              sl_factor=live_config.sl_factor, target_factor=live_config.target_factor)
