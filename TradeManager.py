@@ -462,7 +462,22 @@ class TradeManager:
                                                     self.stop_loss, exited=False, notes="SL adjusted"))
 
     def check_trailing_sl(self, trade_date, current_price: float):
-        """Public API to handle trailing SL based on position."""
+        """ Enhanced trailing SL with delayed activation for initial 2 candles.
+            Also, aggressively tightens SL if close to target.
+        """
+
+        age_seconds = (trade_date - self.entry_time).seconds
+        if age_seconds < 120:
+            logger.debug("Skipping SL trail — trade age under 2 min")
+            return
+
+        near_target = abs(current_price - self.target_price) <= 0.5 * self.atr
+        if near_target:
+            logger.info("📌 Near target — tightening SL aggressively")
+            tight_sl = current_price - 10 if self.position == "BUY" else current_price + 10
+            self._maybe_update_sl(trade_date, tight_sl, current_price)
+            return
+
         if self.position == "BUY":
             self._handle_buy_trailing_sl(trade_date, current_price)
         elif self.position == "SELL":
@@ -571,8 +586,9 @@ class TradeManager:
 
         recent = df.iloc[-6:]
         band_range = recent['close'].max() - recent['close'].min()
+        current_price = recent.iloc[-1]['close']
 
-        if band_range < 15:
+        if band_range < 15 and not (self.position == "BUY" and current_price > self.entry_price + 0.5 * self.atr):
             return True, "Sideways stall: Price stuck in narrow range."
 
         return False, "Not a Sideways Market Stall"
@@ -580,6 +596,7 @@ class TradeManager:
     def monitor_trade(self, get_data_func, interval: int = 60):
         """
         Poll live data, update ATR, check exit conditions and SL.
+        Sideways exit retained, but near-target no longer exits — tightens SL instead.
         """
         while self.position:
             df = get_data_func(config=self.config, days=5)
@@ -623,16 +640,14 @@ class TradeManager:
                 time.sleep(self.config.COOLDOWN_MINUTES * 60)
                 break
 
-            if not exit_flag:
-                stall_flag, stall_reason = self._check_stall_exit(df)
-                if stall_flag:
-                    self.exit_with_reason(price, stall_reason)
-                    logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
-                    time.sleep(self.config.COOLDOWN_MINUTES * 60)
-                    break
+            stall_flag, stall_reason = self._check_stall_exit(df)
+            if stall_flag:
+                self.exit_with_reason(price, stall_reason)
+                logger.info(f"Cooling down for {self.config.COOLDOWN_MINUTES} minutes.")
+                time.sleep(self.config.COOLDOWN_MINUTES * 60)
+                break
 
             self.check_trailing_sl(trade_date, price)
-
             time.sleep(interval)
 
     def print_summary(self):
