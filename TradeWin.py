@@ -22,9 +22,10 @@ def run_live_trading(live_config, live_kite):
         logger.warning(f"⚠️ RMS Margin API failed: {e}")
         margins = 250000  # fallback assumption
 
-    market_data = MarketData(kite=live_kite, retries=5, backoff=2, entry_buffer=live_config.entry_buffer,
-                             sl_factor=live_config.sl_factor, target_factor=live_config.target_factor)
     trade_manager = TradeManager(kite=live_kite, margins=margins)
+    market_data = MarketData(kite=live_kite, trade_manager=trade_manager, retries=5, backoff=2,
+                             entry_buffer=live_config.entry_buffer, sl_factor=live_config.sl_factor,
+                             target_factor=live_config.target_factor)
 
     try:
         while True:
@@ -110,8 +111,8 @@ def run_backtest(bt_config, bt_kite):
     margins = 250000
     file_path = "nifty_bank_5min_15yr.csv"
 
-    market_data = MarketData(kite=bt_kite, retries=5, backoff=2)
     trade_manager = TradeManager(kite=bt_kite, margins=margins)
+    market_data = MarketData(kite=bt_kite, trade_manager=trade_manager, retries=5, backoff=2)
 
     try:
         df = pd.read_csv(file_path, index_col=0)
