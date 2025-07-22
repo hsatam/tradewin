@@ -22,11 +22,11 @@ class MarketData:
     MarketData class for fetching, processing, and preparing technical indicators and strategy-specific signals.
     Supports adaptive switching between ORB and VWAP_REV strategies.
     """
-
     def __init__(
             self,
             kite=None,
             strategy=None,
+            trade_manager=None,
             vwap_dev=0.0015,
             sl_mult=0.6,
             target_mult=2.0,
@@ -37,11 +37,13 @@ class MarketData:
             retries=10,
             backoff=3
     ):
+        self.trade_manager = trade_manager
         self.kite = kite
         self.strategy = strategy
         self.adaptive_mode = strategy is None
         self.active_strategy = "ORB" if self.adaptive_mode else strategy
 
+        self.recent_df = None
         # VWAP strategy parameters
         self.vwap_dev = vwap_dev
         self.sl_mult = sl_mult
@@ -120,6 +122,9 @@ class MarketData:
             self.active_strategy,
             self.daily_strategy_map
         )
+
+        self.recent_df = df
+
         return df
 
     def decide_trade_from_row(self, row):
@@ -128,10 +133,95 @@ class MarketData:
         strategy = self.daily_strategy_map.get(row['date'].date(), "VWAP_REV") \
             if self.adaptive_mode else self.active_strategy
 
-        if strategy == "VWAP_REV":
-            return VWAPStrategy(self).evaluate(row)
+        result = VWAPStrategy(self).evaluate(row) if strategy == "VWAP_REV" else ORBStrategy(self).evaluate(row)
+
+        # Skip if not valid
+        if not result["valid"]:
+            return result
+
+        # ----- Inject custom filters here -----
+        index = row.name  # timestamp
+
+        # Momentum filter
+        parent_df = self.recent_df  # set by prepare_indicators()
+        current_index = parent_df.index.get_loc(index)
+        if not self.is_momentum_confirmed(parent_df, current_index, result["signal"]):
+            result["valid"] = False
+            result["reason"] = "Weak momentum"
+            return result
+
+        # Weak early candle after cooldown
+        if self.trade_manager and self.trade_manager.last_exit_time:
+            if self.is_initial_weak_candle(row, row['date'], self.trade_manager.last_exit_time):
+                result["valid"] = False
+                result["reason"] = "Weak post-cooldown candle"
+                return result
+
+        # Recommendation #4 — Same-zone reentry
+        if self.trade_manager and self.is_same_zone_reentry(
+                result["entry"], self.trade_manager.last_exit_price,
+                self.trade_manager.last_exit_time, row['ATR'], row['date']
+        ):
+            result["valid"] = False
+            result["reason"] = "Same-zone reentry"
+            return result
+
+        # Recommendation #5 — Require pullback before re-entry
+        if self.trade_manager and self.trade_manager.last_exit_price and not self.is_reentry_after_pullback(
+                result["entry"], self.trade_manager.last_exit_price, result["signal"], row['ATR']
+        ):
+            result["valid"] = False
+            result["reason"] = "No pullback for re-entry"
+            return result
+
+        return result
+
+    @staticmethod
+    def is_momentum_confirmed(df, current_index, direction):
+        """
+        Check previous 3 candles for consistent momentum.
+        """
+        if current_index < 3:
+            return False
+        prev = df.iloc[current_index - 3:current_index]
+        if direction == "SELL":
+            return all(prev['close'].iloc[i] < prev['open'].iloc[i] for i in range(len(prev)))  # 3 bearish candles
         else:
-            return ORBStrategy(self).evaluate(row)
+            return all(prev['close'].iloc[i] > prev['open'].iloc[i] for i in range(len(prev)))  # 3 bullish candles
+
+    @staticmethod
+    def is_same_zone_reentry(price, last_exit_price, last_exit_time, atr, current_time):
+        """
+        Avoid trades in same zone within 15 min and < 0.5 * ATR distance.
+        """
+        if not last_exit_price or not last_exit_time:
+            return False
+        price_diff = abs(price - last_exit_price)
+        time_diff = (current_time - last_exit_time).total_seconds()
+        return price_diff < 0.5 * atr and time_diff < 900  # 15 minutes
+
+    @staticmethod
+    def is_initial_weak_candle(row, trade_time, entry_time):
+        """
+        Skip trades if < 5 candles passed since cooldown and body is weak.
+        """
+        age = (trade_time - entry_time).total_seconds() if entry_time else None
+        body = abs(row['close'] - row['open'])
+        candle_range = row['high'] - row['low']
+        return age is not None and age < 300 and (candle_range < 5 or body < 0.25 * candle_range)
+
+    @staticmethod
+    def is_reentry_after_pullback(price, last_exit_price, direction, atr):
+        """
+        Permit re-entry if price has moved >= 0.5 ATR from last exit in same direction.
+        """
+        if not last_exit_price:
+            return False
+        if direction == "SELL" and price < last_exit_price - 0.5 * atr:
+            return True
+        if direction == "BUY" and price > last_exit_price + 0.5 * atr:
+            return True
+        return False
 
     @staticmethod
     def required_columns():
