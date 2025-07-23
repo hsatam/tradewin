@@ -206,6 +206,15 @@ class VWAPStrategy:
                     strategy="VWAP_REV"
                 )
 
+            return TradeDecision(
+                date=None,
+                signal=None,
+                entry=None,
+                sl=None,
+                target=None,
+                valid=False,
+                strategy=None
+            )
         except Exception as e:
             logger.error(f"VWAP strategy error: {e}")
 
@@ -317,6 +326,16 @@ class ORBStrategy:
                     valid=True,
                     strategy="ORB"
                 )
+
+            return TradeDecision(
+                date=None,
+                signal=None,
+                entry=None,
+                sl=None,
+                target=None,
+                valid=False,
+                strategy=None
+            )
 
         except Exception as e:
             logger.error(f"ORB strategy error: {e}")
