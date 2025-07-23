@@ -82,7 +82,8 @@ def run_live_trading(live_config, live_kite):
                             trade_date, trade_signal, trade_price, trade_sl, strategy,
                             (max(1, int(margins // 250000)) * (live_config.TRADE_QTY // 35))
                         )
-                        trade_manager.monitor_trade(market_data.get_data, interval=60)
+                        trade_manager.monitor_trade(market_data.get_data,
+                                                    prepare_func=market_data.prepare_indicators, interval=60)
                     else:
                         logger.info("No BUY / SELL Signal...")
                         time.sleep(60)
