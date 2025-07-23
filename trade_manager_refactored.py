@@ -59,6 +59,9 @@ class TradeExecutor:
         self.margins = 250000
         self.lots = 1
 
+        self.last_exit_time = None
+        self.last_exit_price = None
+
     def place_order(self, trade_date, action, price, stoploss, strategy, lots):
         if self.state.open_trade:
             logger.warning("Trade already open. Skipping.")
@@ -177,6 +180,9 @@ class TradeExecutor:
             low = round(df.iloc[-1]['low'], 2)
             trade_date = df.iloc[-1]['date']
             self.atr = df['ATR'].iloc[-1] or self.atr
+
+            self.last_exit_time = datetime.now()  # or the candle time if you prefer
+            self.last_exit_price = price  # or the trade exit price
 
             logger.info("📈 Monitoring trade — Current price: %.2f | Stop Loss: %.2f", price, self.state.stop_loss)
 
