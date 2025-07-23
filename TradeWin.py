@@ -126,12 +126,12 @@ def run_backtest(bt_config, bt_kite):
 
         strategy_params = {
             "vwap_dev": getattr(bt_config, "vwap_dev", 0.0025),
-            "sl_mult": getattr(bt_config, "sl_mult", 0.5),
-            "target_mult": getattr(bt_config, "target_mult", 2.5),
-            "rr_threshold": getattr(bt_config, "rr_threshold", 1.2),
-            "entry_buffer": getattr(bt_config, "entry_buffer", 0.5),
-            "sl_factor": getattr(bt_config, "sl_factor", 1.5),
-            "target_factor": getattr(bt_config, "target_factor", 1.5)
+            "sl_mult": bt_config.vwap_sl_mult,
+            "target_mult": bt_config.vwap_target_mult,
+            "rr_threshold": bt_config.vwap_rr_threshold,
+            "entry_buffer": bt_config.entry_buffer,
+            "sl_factor": bt_config.orb_sl_factor,
+            "target_factor": bt_config.orb_target_factor
         }
 
         strategy_name = getattr(bt_config, "strategy_name", None)  # 'VWAP_REV', 'ORB', or None for adaptive
