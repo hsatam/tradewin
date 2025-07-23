@@ -53,6 +53,7 @@ class StrategyApplier:
                     (group['date'].dt.time >= ORB_WINDOW_START) & (group['date'].dt.time <= ORB_WINDOW_END)]
 
                 if (morning_range['high'].max() - morning_range['low'].min()) < 25:
+                    logger.warning(f"Skipping strategy assignment on {date_val} due to narrow morning range.")
                     continue
 
                 strategy = StrategyApplier.choose_strategy(group, adaptive_mode, active_strategy)
@@ -107,47 +108,23 @@ class VWAPStrategy:
             if candle_range < 5 or body < 0.25 * candle_range:
                 # Skip weak candles
                 return TradeDecision(
-                    date=None,
-                    signal=None,
-                    entry=None,
-                    sl=None,
-                    target=None,
-                    valid=False,
-                    strategy=None
-                )
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason="Weak candle")
 
             if pd.isna(entry) or pd.isna(atr):
                 return TradeDecision(
-                    date=None,
-                    signal=None,
-                    entry=None,
-                    sl=None,
-                    target=None,
-                    valid=False,
-                    strategy=None
-                )
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason="Missing entry or ATR")
 
             if any(pd.isna([vwap, atr, row['RSI14'], ema20, prev_close])):
                 return TradeDecision(
-                    date=None,
-                    signal=None,
-                    entry=None,
-                    sl=None,
-                    target=None,
-                    valid=False,
-                    strategy=None
-                )
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason="Missing indicator value(s)")
 
             if atr / entry < 0.0001 or atr < 5:
                 return TradeDecision(
-                    date=None,
-                    signal=None,
-                    entry=None,
-                    sl=None,
-                    target=None,
-                    valid=False,
-                    strategy=None
-                )
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason="ATR too low")
 
             threshold_above = vwap + self.dev * entry
             threshold_below = vwap - self.dev * entry
@@ -160,24 +137,11 @@ class VWAPStrategy:
 
                 if (target - entry) < self.rr_threshold * (entry - sl):
                     return TradeDecision(
-                        date=None,
-                        signal=None,
-                        entry=None,
-                        sl=None,
-                        target=None,
-                        valid=ok,
-                        strategy=None
-                    )
+                        date=None, signal=None, entry=None, sl=None, target=None,
+                        valid=ok, strategy=None, reason="Risk/reward too low")
 
                 return TradeDecision(
-                    date=dt,
-                    signal="BUY",
-                    entry=entry,
-                    sl=sl,
-                    target=target,
-                    valid=ok,
-                    strategy="VWAP_REV"
-                )
+                    date=dt, signal="BUY", entry=entry, sl=sl, target=target, valid=ok, strategy="VWAP_REV")
 
             if entry < threshold_below <= prev_close and entry < ema20:
                 dt = row['date']
@@ -187,46 +151,22 @@ class VWAPStrategy:
 
                 if (entry - target) < self.rr_threshold * (sl - entry):
                     return TradeDecision(
-                        date=None,
-                        signal=None,
-                        entry=None,
-                        sl=None,
-                        target=None,
-                        valid=ok,
-                        strategy=None
-                    )
+                        date=None, signal=None, entry=None, sl=None, target=None,
+                        valid=ok, strategy=None, reason="Risk/reward too low")
 
                 return TradeDecision(
-                    date=dt,
-                    signal="SELL",
-                    entry=entry,
-                    sl=sl,
-                    target=target,
-                    valid=ok,
-                    strategy="VWAP_REV"
-                )
+                    date=dt, signal="SELL", entry=entry, sl=sl, target=target, valid=ok, strategy="VWAP_REV")
 
             return TradeDecision(
-                date=None,
-                signal=None,
-                entry=None,
-                sl=None,
-                target=None,
-                valid=False,
-                strategy=None
-            )
+                date=None, signal=None, entry=None, sl=None, target=None,
+                valid=False, strategy=None, reason="No VWAP_REV signal conditions met")
+
         except Exception as e:
             logger.error(f"VWAP strategy error: {e}")
 
             return TradeDecision(
-                date=None,
-                signal=None,
-                entry=None,
-                sl=None,
-                target=None,
-                valid=False,
-                strategy=None
-            )
+                date=None, signal=None, entry=None, sl=None, target=None,
+                valid=False, strategy=None, reason=f"Exception: {e}")
 
 
 class ORBStrategy:
@@ -243,38 +183,20 @@ class ORBStrategy:
             if candle_range < 5 or body < 0.25 * candle_range:
                 # Skip weak candles
                 return TradeDecision(
-                    date=None,
-                    signal=None,
-                    entry=None,
-                    sl=None,
-                    target=None,
-                    valid=False,
-                    strategy=None
-                )
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason="Weak candle")
 
             current_time = row['date'].time()
             if not (dt_time(9, 30) <= current_time <= dt_time(15, 25)):
                 return TradeDecision(
-                    date=None,
-                    signal=None,
-                    entry=None,
-                    sl=None,
-                    target=None,
-                    valid=False,
-                    strategy=None
-                )
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason="Outside trading window")
 
             atr = row['ATR']
             if pd.isna(atr) or atr < 10:  # Lower the threshold
                 return TradeDecision(
-                    date=None,
-                    signal=None,
-                    entry=None,
-                    sl=None,
-                    target=None,
-                    valid=False,
-                    strategy=None
-                )
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason="ATR too low or missing")
 
             bullish = row['close_prev_1'] > row['open_prev_1']
             bearish = row['close_prev_1'] < row['open_prev_1']
@@ -284,14 +206,8 @@ class ORBStrategy:
 
             if pd.isna(long_entry) or pd.isna(short_entry):
                 return TradeDecision(
-                    date=None,
-                    signal=None,
-                    entry=None,
-                    sl=None,
-                    target=None,
-                    valid=False,
-                    strategy=None
-                )
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason="Missing ORB levels")
 
             # --- LONG ---
             if row['high'] >= long_entry and bullish:
@@ -301,14 +217,7 @@ class ORBStrategy:
                 target = entry + row['orb_target']
 
                 return TradeDecision(
-                    date=dt,
-                    signal="BUY",
-                    entry=entry,
-                    sl=sl,
-                    target=target,
-                    valid=True,
-                    strategy="ORB"
-                )
+                    date=dt, signal="BUY", entry=entry, sl=sl, target=target, valid=True, strategy="ORB")
 
             # --- SHORT ---
             if row['low'] <= short_entry and bearish:
@@ -318,34 +227,15 @@ class ORBStrategy:
                 target = entry - row['orb_target']
 
                 return TradeDecision(
-                    date=dt,
-                    signal="SELL",
-                    entry=entry,
-                    sl=sl,
-                    target=target,
-                    valid=True,
-                    strategy="ORB"
-                )
+                    date=dt, signal="SELL", entry=entry, sl=sl, target=target, valid=True, strategy="ORB")
 
             return TradeDecision(
-                date=None,
-                signal=None,
-                entry=None,
-                sl=None,
-                target=None,
-                valid=False,
-                strategy=None
-            )
+                date=None, signal=None, entry=None, sl=None, target=None,
+                valid=False, strategy=None, reason="No ORB signal conditions met")
 
         except Exception as e:
             logger.error(f"ORB strategy error: {e}")
 
             return TradeDecision(
-                date=None,
-                signal=None,
-                entry=None,
-                sl=None,
-                target=None,
-                valid=False,
-                strategy=None
-            )
+                date=None, signal=None, entry=None, sl=None, target=None,
+                valid=False, strategy=None, reason=f"Exception: {e}")
