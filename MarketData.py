@@ -157,7 +157,7 @@ class MarketData:
                 result["reason"] = "Weak post-cooldown candle"
                 return result
 
-        # Recommendation #4 — Same-zone reentry
+        # Same-zone reentry
         if self.trade_manager and self.is_same_zone_reentry(
                 result["entry"], self.trade_manager.last_exit_price,
                 self.trade_manager.last_exit_time, row['ATR'], row['date']
@@ -166,7 +166,7 @@ class MarketData:
             result["reason"] = "Same-zone reentry"
             return result
 
-        # Recommendation #5 — Require pullback before re-entry
+        # Require pullback before re-entry
         if self.trade_manager and self.trade_manager.last_exit_price and not self.is_reentry_after_pullback(
                 result["entry"], self.trade_manager.last_exit_price, result["signal"], row['ATR']
         ):
