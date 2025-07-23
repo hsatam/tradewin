@@ -97,13 +97,12 @@ class Backtester:
             # Only place a new trade if no trade is active
             if not self.trade_manager.open_trade and not self.trade_manager.in_cooldown(row["date"]):
                 result = self.strategy.decide_trade_from_row(row)
-                if result.get("valid"):
-                    trade_date = result.get("date")
-                    trade_signal = result.get("signal")
-                    trade_price = result.get("entry")
-                    trade_sl = result.get("sl")
-                    target = result.get("target")
-                    strategy = result.get("strategy")
+                if result.valid:
+                    trade_date = result.date
+                    trade_signal = result.signal
+                    trade_price = result.entry
+                    trade_sl = result.sl
+                    strategy = result.strategy
 
                     logger.debug("Evaluating trade at %s", row["date"])
                     if trade_signal in ["BUY", "SELL"] and trade_price > 0 and trade_sl > 0:
