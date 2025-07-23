@@ -2,7 +2,7 @@
 
 import pandas as pd
 from backtester import Backtester, get_strategy_class
-from TradeManager import TradeManager
+from trade_manager_refactored import TradeExecutor
 from MarketData import MarketData
 
 from log_config import get_logger
@@ -22,9 +22,11 @@ def run_backtest(df, strategy_name, strategy_params, adaptive_lots=True):
         strategy="ORB"
     )
 
-    trade_manager = TradeManager(kite=None, margins=250000)
+    trade_manager = TradeExecutor(kite=None)
+    trade_manager.margins = 250000
 
-    bt = Backtester(df.copy(), strategy, adaptive_lots=adaptive_lots, trade_manager=trade_manager, market_data=market_data)
+    bt = Backtester(df.copy(), strategy, adaptive_lots=adaptive_lots,
+                    trade_manager=trade_manager, market_data=market_data)
     return bt.run()
 
 

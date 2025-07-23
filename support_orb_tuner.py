@@ -3,7 +3,7 @@ from itertools import product
 from joblib import Parallel, delayed, parallel_backend
 from MarketData import MarketData
 from backtester import Backtester
-from TradeManager import TradeManager
+from trade_manager_refactored import TradeExecutor
 import os
 import argparse
 from log_config import get_logger
@@ -26,11 +26,12 @@ def evaluate_params(df_prepared, eb, sl, tgt, verbose=False):
         strategy="ORB"
     )
 
-    trade_manager = TradeManager(kite=None, margins=250000)
+    trade_manager = TradeExecutor(kite=None)
+    trade_manager.margins = 250000
     bt = Backtester(df_prepared.copy(), market_data, adaptive_lots=True,
                     market_data=market_data, trade_manager=trade_manager)
     result = bt.run()
-    trade_manager.db_handler.log_populate()
+    trade_manager.populate_trade_logs()
 
     summary = {
         "entry_buffer": eb,
@@ -44,8 +45,8 @@ def evaluate_params(df_prepared, eb, sl, tgt, verbose=False):
     }
 
     if verbose:
-        logger.info(f"✅ EB={eb}, SL={sl}, TGT={tgt} → Win={summary['Win%']:.2f}, Exp={summary['Expectancy']:.2f}, "
-              f"PnL={summary['Cumulative PnL']:.2f}")
+        logger.info(f"✅ EB={eb}, SL={sl}, TGT={tgt} → Win={summary['Win%']:.2f}, "
+                    f"Exp={summary['Expectancy']:.2f}, PnL={summary['Cumulative PnL']:.2f}")
     return summary
 
 
@@ -82,12 +83,14 @@ def main():
     sorted_results = sorted(final_results, key=lambda x: x["Expectancy"], reverse=True)
     logger.info("\n🏁 Top Parameter Combinations (Ranked by Expectancy):\n")
     for r in sorted_results:
-        logger.info(f"✅ EB={r['entry_buffer']}, SL={r['sl_factor']}, TGT={r['target_factor']} → "
-              f"Trades={r['Trades']}, Win={r['Win%']:.2f}%, Exp={r['Expectancy']:.2f}, PnL={r['Cumulative PnL']:.2f}")
+        logger.info(f"✅ EB={r['entry_buffer']}, SL={r['sl_factor']}, TGT={r['target_factor']}, "
+                    f"Trades={r['Trades']}, Win={r['Win%']:.2f}%, Exp={r['Expectancy']:.2f}, "
+                    f"PnL={r['Cumulative PnL']:.2f}")
 
 
 def run_backtest_on_full_data(entry_buffer, sl_factor, target_factor):
-    logger.info(f"\n🚀 Running ORB strategy with EB={entry_buffer}, SL={sl_factor}, TGT={target_factor} on full dataset...\n")
+    logger.info(f"\n🚀 Running ORB strategy with EB={entry_buffer}, SL={sl_factor}, "
+                f"TGT={target_factor} on full dataset...\n")
 
     file_path = "nifty_bank_5min_15yr.csv"
     df = pd.read_csv(file_path)
@@ -108,12 +111,13 @@ def run_backtest_on_full_data(entry_buffer, sl_factor, target_factor):
     df_prepared = market_data.prepare_indicators(df.copy())
 
     # Run backtest
-    trade_manager = TradeManager(kite=None, margins=250000)
+    trade_manager = TradeExecutor(kite=None)
+    trade_manager.margins = 250000
     bt = Backtester(df_prepared, market_data, adaptive_lots=True,
                     market_data=market_data, trade_manager=trade_manager)
 
     bt.run()
-    trade_manager.db_handler.log_populate()
+    trade_manager.populate_trade_logs()
 
 
 if __name__ == "__main__":
