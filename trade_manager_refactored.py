@@ -16,6 +16,8 @@ logger = get_logger()
 
 class TradeState:
     def __init__(self):
+        self.stop_loss = None
+        self.trade_direction = None
         self.last_sl_update_time = None
         self.last_exit_time = None
         self.last_exit_price = None
@@ -24,16 +26,16 @@ class TradeState:
         self.open_trade = None
         self.entry_time = None
         self.target_price = None
-        self.stop_loss = None
         self.entry_price = None
         self.position = None
         self.date = None
         self.reset()
 
     def reset(self):
+        self.trade_direction = None
         self.position = None
-        self.entry_price = 0.0
         self.stop_loss = 0.0
+        self.entry_price = 0.0
         self.target_price = 0.0
         self.entry_time = None
         self.open_trade = False
@@ -62,17 +64,12 @@ class TradeExecutor:
         self.last_exit_time = None
         self.last_exit_price = None
 
-        self.trade_direction = None  # "BUY" or "SELL"
-        self.stop_loss = None
-        self.entry_price = None
-        self.strategy = None
-
     def place_order(self, trade_date, action, price, stoploss, strategy, lots):
 
-        self.trade_direction = action
-        self.entry_price = price
-        self.stop_loss = stoploss
-        self.strategy = strategy
+        self.state.trade_direction = action
+        self.state.entry_price = price
+        self.state.stop_loss = stoploss
+        self.state.strategy = strategy
 
         if self.state.open_trade:
             logger.warning("Trade already open. Skipping.")
@@ -198,12 +195,18 @@ class TradeExecutor:
 
                 # Example: check SL or target
                 current_price = df['close'].iloc[-1]
-                if self.trade_direction == "SELL" and current_price > self.stop_loss:
+                logger.info(f"📈 Monitoring trade — Current price: {current_price:.2f} | "
+                            f"Stop Loss: {self.state.stop_loss:.2f} | ATR: {self.atr:.2f}")
+
+                # Call trailing SL manager
+                self.check_trailing_sl(df.index[-1], current_price)
+
+                if self.state.trade_direction == "SELL" and current_price > self.state.stop_loss:
                     logger.info("❌ SL hit for SELL trade at %.2f", current_price)
                     self.last_exit_time = datetime.now()
                     self.last_exit_price = current_price
                     break
-                elif self.trade_direction == "BUY" and current_price < self.stop_loss:
+                elif self.state.trade_direction == "BUY" and current_price < self.state.stop_loss:
                     logger.info("❌ SL hit for BUY trade at %.2f", current_price)
                     self.last_exit_time = datetime.now()
                     self.last_exit_price = current_price
