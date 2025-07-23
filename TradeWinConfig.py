@@ -34,6 +34,14 @@ class LoadTradeWinConfig:
 
         with open(config_path, 'r') as f:
             self._config = yaml.safe_load(f)
+            orb_config = self._config.get("orb", {})
+            self.orb_sl_factor = orb_config.get("sl_factor", 1.5)
+            self.orb_target_factor = orb_config.get("target_factor", 2.0)
+
+            vwap_config = self._config.get("vwap_rev", {})
+            self.vwap_sl_mult = vwap_config.get("sl_mult", 0.8)
+            self.vwap_target_mult = vwap_config.get("target_mult", 3.5)
+            self.vwap_rr_threshold = vwap_config.get("rr_threshold", 1.2)
 
         for key, value in self._config.items():
             setattr(self, key, value)
