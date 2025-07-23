@@ -22,7 +22,7 @@ class Candle(BaseModel):
 
 # Data file path and initialization
 DATA_FILE_PATH = "/Users/hemantsatam/Library/Mobile Documents/com~apple~CloudDocs/projects.iCloud/tradewin/BankNifty" \
-                 "/nifty_bank_5min_15yr.csv"
+                 "/data/nifty_bank_5min_15yr.csv"
 SIM_START_DATETIME = datetime(2024, 6, 4, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 SIM_CURRENT_DATETIME = datetime(2024, 6, 4, 10, 30, tzinfo=ZoneInfo("Asia/Kolkata"))
 # In-memory state
