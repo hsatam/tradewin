@@ -3,7 +3,7 @@
 from datetime import datetime
 import pandas as pd
 from zoneinfo import ZoneInfo
-import time
+
 from TradeWinConfig import LoadTradeWinConfig
 from TradeWinUtils import TradeWinUtils
 from TradeLogger import TradeLogger
@@ -62,7 +62,18 @@ class TradeExecutor:
         self.last_exit_time = None
         self.last_exit_price = None
 
+        self.trade_direction = None  # "BUY" or "SELL"
+        self.stop_loss = None
+        self.entry_price = None
+        self.strategy = None
+
     def place_order(self, trade_date, action, price, stoploss, strategy, lots):
+
+        self.trade_direction = action
+        self.entry_price = price
+        self.stop_loss = stoploss
+        self.strategy = strategy
+
         if self.state.open_trade:
             logger.warning("Trade already open. Skipping.")
             return
@@ -162,41 +173,45 @@ class TradeExecutor:
     def populate_trade_logs(self):
         self.db.populate_logs()
 
-    def monitor_trade(self, get_data_func, interval: int = 60):
+    def monitor_trade(self, get_data_func, prepare_func, interval=60):
         """
-        Poll live data, update ATR, check exit conditions and SL.
-        Sideways exit retained, but near-target no longer exits — tightens SL instead.
+        Monitor an active trade. Fetch price data using `get_data_func`,
+        enrich with indicators via `prepare_func`, and update trade status.
         """
-        while self.state.position:
-            df = get_data_func(config=self.config, days=5)
-            if df is None or df.empty or len(df) < 15:
-                logger.warning("No live data; retrying in %s seconds.", interval)
+        import time
+        from datetime import datetime
+
+        try:
+            while True:
+                df = get_data_func()
+                if df is None or df.empty:
+                    logger.warning("⚠️ No data during monitor_trade. Retrying in %d seconds...", interval)
+                    time.sleep(interval)
+                    continue
+
+                df = prepare_func(df)
+
+                try:
+                    self.atr = df['ATR'].iloc[-1] or self.atr
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not update ATR from data: {e}")
+
+                # Example: check SL or target
+                current_price = df['close'].iloc[-1]
+                if self.trade_direction == "SELL" and current_price > self.stop_loss:
+                    logger.info("❌ SL hit for SELL trade at %.2f", current_price)
+                    self.last_exit_time = datetime.now()
+                    self.last_exit_price = current_price
+                    break
+                elif self.trade_direction == "BUY" and current_price < self.stop_loss:
+                    logger.info("❌ SL hit for BUY trade at %.2f", current_price)
+                    self.last_exit_time = datetime.now()
+                    self.last_exit_price = current_price
+                    break
+
+                # Add your exit conditions here...
+
                 time.sleep(interval)
-                continue
 
-            df['date'] = df.index
-            price = round(df.iloc[-1]['close'], 2)
-            high = round(df.iloc[-1]['high'], 2)
-            low = round(df.iloc[-1]['low'], 2)
-            trade_date = df.iloc[-1]['date']
-            self.atr = df['ATR'].iloc[-1] or self.atr
-
-            self.last_exit_time = datetime.now()  # or the candle time if you prefer
-            self.last_exit_price = price  # or the trade exit price
-
-            logger.info("📈 Monitoring trade — Current price: %.2f | Stop Loss: %.2f", price, self.state.stop_loss)
-
-            if self.reached_cutoff_time():
-                self.exit_trade(price, "Market cutoff reached.")
-                break
-
-            # Basic SL logic
-            if self.state.position == "BUY" and price <= self.state.stop_loss:
-                self.exit_trade(price, "Stop-loss hit.")
-                break
-            elif self.state.position == "SELL" and price >= self.state.stop_loss:
-                self.exit_trade(price, "Stop-loss hit.")
-                break
-
-            self.check_trailing_sl(trade_date, price)
-            time.sleep(interval)
+        except KeyboardInterrupt:
+            logger.info("🔁 Monitor loop interrupted manually.")
