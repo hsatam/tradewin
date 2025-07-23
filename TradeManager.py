@@ -697,4 +697,4 @@ class TradeManager:
             "SELECT SUM(pnl) as pnl_today FROM trades WHERE time::date = CURRENT_DATE;"
         )
         result = self.db_handler.cur.fetchone()
-        return result[0] or 0.0
+        return (result or {}).get("pnl_today") or 0.0
