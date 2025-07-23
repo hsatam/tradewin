@@ -195,3 +195,4 @@ cython_debug/
 /.idea/workspace.xml
 *.csv
 *.txt
+kite_request_token.txt
