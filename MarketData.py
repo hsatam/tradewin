@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import time
+from zoneinfo import ZoneInfo
 from datetime import time as dt_time
 from strategy import ORBStrategy, VWAPStrategy
 from strategy import IndicatorCalculator, StrategyApplier
@@ -81,8 +82,6 @@ class MarketData:
                 if config.WEEKEND_TESTING:
                     resp = requests.get("http://localhost:8000/historical_data", params={
                         "symbol": "NIFTY_BANK",
-                        "from_date": config.FROM_DATE,
-                        "to_date": config.TO_DATE,
                         "interval": "5minute"
                     })
                     df = pd.DataFrame(resp.json())
@@ -96,6 +95,7 @@ class MarketData:
 
                 df['datetime'] = pd.to_datetime(df['date'])
                 df.set_index('datetime', inplace=True)
+                df = df[~df.index.duplicated(keep='first')]
                 df['date'] = df.index
                 return df[['open', 'high', 'low', 'close', 'volume']]
             except Exception as e:
@@ -137,6 +137,7 @@ class MarketData:
 
         # Skip if not valid
         if not result.valid:
+            logger.debug(f"Decision rejected — Reason: {result.reason}")
             return result
 
         # ----- Inject custom filters here -----
@@ -144,7 +145,10 @@ class MarketData:
 
         # Momentum filter
         parent_df = self.recent_df  # set by prepare_indicators()
-        current_index = parent_df.index.get_loc(index)
+
+        loc = parent_df.index.get_loc(index)
+        current_index = loc.start if isinstance(loc, slice) else loc
+
         if not self.is_momentum_confirmed(parent_df, current_index, result.signal):
             result.valid = False
             result.reason = "Weak momentum"
@@ -205,6 +209,11 @@ class MarketData:
         """
         Skip trades if < 5 candles passed since cooldown and body is weak.
         """
+        if trade_time.tzinfo is None:
+            trade_time = trade_time.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        if entry_time.tzinfo is None:
+            entry_time = entry_time.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+
         age = (trade_time - entry_time).total_seconds() if entry_time else None
         body = abs(row['close'] - row['open'])
         candle_range = row['high'] - row['low']
