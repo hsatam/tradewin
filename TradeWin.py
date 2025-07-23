@@ -82,17 +82,24 @@ def run_live_trading(live_config, live_kite):
                             trade_date, trade_signal, trade_price, trade_sl, strategy,
                             (max(1, int(margins // 250000)) * (live_config.TRADE_QTY // 35))
                         )
-                        trade_manager.monitor_trade(market_data.get_data,
+                        trade_manager.monitor_trade(lambda: market_data.get_data(config),
                                                     prepare_func=market_data.prepare_indicators, interval=60)
                     else:
-                        logger.info("No BUY / SELL Signal...")
+                        if result and not result.valid:
+                            logger.info(f"No Signal — Reason: {result.reason}")
+                        else:
+                            logger.info("No BUY / SELL Signal...")
+
                         time.sleep(60)
                 else:
                     if trade_manager.in_cooldown():
                         logger.info(f"In {live_config.COOLDOWN_MINUTES} minutes Cooldown...")
                         time.sleep(live_config.COOLDOWN_MINUTES * 60)
                     else:
-                        logger.info("No BUY / SELL Signal...")
+                        if result and not result.valid:
+                            logger.info(f"No Signal — Reason: {result.reason}")
+                        else:
+                            logger.info("No BUY / SELL Signal...")
                         time.sleep(60)
 
                 if trade_manager.reached_cutoff_time():
