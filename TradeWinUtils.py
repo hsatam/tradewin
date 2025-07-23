@@ -1,5 +1,6 @@
 from datetime import datetime, time as dtime, date
 from log_config import get_logger
+import uuid
 
 logger = get_logger()
 
@@ -21,7 +22,6 @@ class TradeWinUtils:
     @staticmethod
     def log_trade(action, price, pnl=None):
         """Logs trade details including action (buy/sell), price, and optional P&L."""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         price = round(price, 2)
         if pnl is not None:
             logger.info(f"\U0001f6aa EXIT {action} at {round(price, 2)}, P&L: {pnl:.2f}")
@@ -49,3 +49,8 @@ class TradeWinUtils:
         is_within_hours = market_open <= current_time <= market_close
 
         return is_weekday and not_holiday and is_within_hours
+
+    @staticmethod
+    def generate_id():
+        """Generate a unique trade ID."""
+        return str(uuid.uuid4())
