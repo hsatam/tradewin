@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from datetime import time as dt_time
+from TradeDecision import TradeDecision
 from log_config import get_logger
 logger = get_logger()
 
@@ -105,48 +106,48 @@ class VWAPStrategy:
 
             if candle_range < 5 or body < 0.25 * candle_range:
                 # Skip weak candles
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
+                return TradeDecision(
+                    date=None,
+                    signal=None,
+                    entry=None,
+                    sl=None,
+                    target=None,
+                    valid=False,
+                    strategy=None
+                )
 
             if pd.isna(entry) or pd.isna(atr):
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
+                return TradeDecision(
+                    date=None,
+                    signal=None,
+                    entry=None,
+                    sl=None,
+                    target=None,
+                    valid=False,
+                    strategy=None
+                )
 
             if any(pd.isna([vwap, atr, row['RSI14'], ema20, prev_close])):
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
+                return TradeDecision(
+                    date=None,
+                    signal=None,
+                    entry=None,
+                    sl=None,
+                    target=None,
+                    valid=False,
+                    strategy=None
+                )
 
             if atr / entry < 0.0001 or atr < 5:
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
+                return TradeDecision(
+                    date=None,
+                    signal=None,
+                    entry=None,
+                    sl=None,
+                    target=None,
+                    valid=False,
+                    strategy=None
+                )
 
             threshold_above = vwap + self.dev * entry
             threshold_below = vwap - self.dev * entry
@@ -158,25 +159,25 @@ class VWAPStrategy:
                 ok = (target - entry) >= self.rr_threshold * (entry - sl)
 
                 if (target - entry) < self.rr_threshold * (entry - sl):
-                    return {
-                        "date": None,
-                        "signal": None,
-                        "entry": None,
-                        "sl": None,
-                        "target": None,
-                        "valid": ok,
-                        "strategy": None
-                    }
+                    return TradeDecision(
+                        date=None,
+                        signal=None,
+                        entry=None,
+                        sl=None,
+                        target=None,
+                        valid=ok,
+                        strategy=None
+                    )
 
-                return {
-                    "date": dt,
-                    "signal": "BUY",
-                    "entry": entry,
-                    "sl": sl,
-                    "target": target,
-                    "valid": ok,
-                    "strategy": "VWAP_REV"
-                }
+                return TradeDecision(
+                    date=dt,
+                    signal="BUY",
+                    entry=entry,
+                    sl=sl,
+                    target=target,
+                    valid=ok,
+                    strategy="VWAP_REV"
+                )
 
             if entry < threshold_below <= prev_close and entry < ema20:
                 dt = row['date']
@@ -185,38 +186,38 @@ class VWAPStrategy:
                 ok = (target - entry) < self.rr_threshold * (entry - sl)
 
                 if (entry - target) < self.rr_threshold * (sl - entry):
-                    return {
-                        "date": None,
-                        "signal": None,
-                        "entry": None,
-                        "sl": None,
-                        "target": None,
-                        "valid": ok,
-                        "strategy": None
-                    }
+                    return TradeDecision(
+                        date=None,
+                        signal=None,
+                        entry=None,
+                        sl=None,
+                        target=None,
+                        valid=ok,
+                        strategy=None
+                    )
 
-                return {
-                    "date": dt,
-                    "signal": "SELL",
-                    "entry": entry,
-                    "sl": sl,
-                    "target": target,
-                    "valid": ok,
-                    "strategy": "VWAP_REV"
-                }
+                return TradeDecision(
+                    date=dt,
+                    signal="SELL",
+                    entry=entry,
+                    sl=sl,
+                    target=target,
+                    valid=ok,
+                    strategy="VWAP_REV"
+                )
 
         except Exception as e:
             logger.error(f"VWAP strategy error: {e}")
 
-            return {
-                "date": None,
-                "signal": None,
-                "entry": None,
-                "sl": None,
-                "target": None,
-                "valid": False,
-                "strategy": None
-            }
+            return TradeDecision(
+                date=None,
+                signal=None,
+                entry=None,
+                sl=None,
+                target=None,
+                valid=False,
+                strategy=None
+            )
 
 
 class ORBStrategy:
@@ -224,46 +225,47 @@ class ORBStrategy:
         self.sl_factor = parent.sl_factor
         self.target_factor = parent.target_factor
 
-    def evaluate(self, row):
+    @staticmethod
+    def evaluate(row):
         try:
             body = abs(row['close'] - row['open'])
             candle_range = row['high'] - row['low']
 
             if candle_range < 5 or body < 0.25 * candle_range:
                 # Skip weak candles
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
+                return TradeDecision(
+                    date=None,
+                    signal=None,
+                    entry=None,
+                    sl=None,
+                    target=None,
+                    valid=False,
+                    strategy=None
+                )
 
             current_time = row['date'].time()
             if not (dt_time(9, 30) <= current_time <= dt_time(15, 25)):
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
+                return TradeDecision(
+                    date=None,
+                    signal=None,
+                    entry=None,
+                    sl=None,
+                    target=None,
+                    valid=False,
+                    strategy=None
+                )
 
             atr = row['ATR']
             if pd.isna(atr) or atr < 10:  # Lower the threshold
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
+                return TradeDecision(
+                    date=None,
+                    signal=None,
+                    entry=None,
+                    sl=None,
+                    target=None,
+                    valid=False,
+                    strategy=None
+                )
 
             bullish = row['close_prev_1'] > row['open_prev_1']
             bearish = row['close_prev_1'] < row['open_prev_1']
@@ -272,15 +274,15 @@ class ORBStrategy:
             short_entry = row['orb_short_entry']
 
             if pd.isna(long_entry) or pd.isna(short_entry):
-                return {
-                    "date":     None,
-                    "signal":   None,
-                    "entry":    None,
-                    "sl":       None,
-                    "target":   None,
-                    "valid":    False,
-                    "strategy": None
-                }
+                return TradeDecision(
+                    date=None,
+                    signal=None,
+                    entry=None,
+                    sl=None,
+                    target=None,
+                    valid=False,
+                    strategy=None
+                )
 
             # --- LONG ---
             if row['high'] >= long_entry and bullish:
@@ -289,15 +291,15 @@ class ORBStrategy:
                 sl = entry - row['orb_sl']
                 target = entry + row['orb_target']
 
-                return {
-                    "date":     dt,
-                    "signal":   "BUY",
-                    "entry":    entry,
-                    "sl":       sl,
-                    "target":   target,
-                    "valid":    True,
-                    "strategy": "ORB"
-                }
+                return TradeDecision(
+                    date=dt,
+                    signal="BUY",
+                    entry=entry,
+                    sl=sl,
+                    target=target,
+                    valid=True,
+                    strategy="ORB"
+                )
 
             # --- SHORT ---
             if row['low'] <= short_entry and bearish:
@@ -306,25 +308,25 @@ class ORBStrategy:
                 sl = entry + row['orb_sl']
                 target = entry - row['orb_target']
 
-                return {
-                    "date":     dt,
-                    "signal":   "SELL",
-                    "entry":    entry,
-                    "sl":       sl,
-                    "target":   target,
-                    "valid":    True,
-                    "strategy": "ORB"
-                }
+                return TradeDecision(
+                    date=dt,
+                    signal="SELL",
+                    entry=entry,
+                    sl=sl,
+                    target=target,
+                    valid=True,
+                    strategy="ORB"
+                )
 
         except Exception as e:
             logger.error(f"ORB strategy error: {e}")
 
-        return {
-            "date":     None,
-            "signal":   None,
-            "entry":    None,
-            "sl":       None,
-            "target":   None,
-            "valid":    False,
-            "strategy": None
-        }
+            return TradeDecision(
+                date=None,
+                signal=None,
+                entry=None,
+                sl=None,
+                target=None,
+                valid=False,
+                strategy=None
+            )
