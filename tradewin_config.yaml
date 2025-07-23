@@ -28,3 +28,10 @@ STALL_BAND_RANGE: 15
 STALL_CANDLE_COUNT: 6
 RETRACE_THRESHOLD: 0.4
 MOMENTUM_BODY_RATIO: 0.25
+orb:
+  sl_factor: 1.5
+  target_factor: 2.0
+vwap_rev:
+  sl_mult: 0.8
+  target_mult: 3.5
+  rr_threshold: 1.2
