@@ -136,7 +136,7 @@ class MarketData:
         result = VWAPStrategy(self).evaluate(row) if strategy == "VWAP_REV" else ORBStrategy(self).evaluate(row)
 
         # Skip if not valid
-        if not result["valid"]:
+        if not result.valid:
             return result
 
         # ----- Inject custom filters here -----
@@ -145,33 +145,33 @@ class MarketData:
         # Momentum filter
         parent_df = self.recent_df  # set by prepare_indicators()
         current_index = parent_df.index.get_loc(index)
-        if not self.is_momentum_confirmed(parent_df, current_index, result["signal"]):
-            result["valid"] = False
-            result["reason"] = "Weak momentum"
+        if not self.is_momentum_confirmed(parent_df, current_index, result.signal):
+            result.valid = False
+            result.reason = "Weak momentum"
             return result
 
         # Weak early candle after cooldown
         if self.trade_manager and self.trade_manager.last_exit_time:
             if self.is_initial_weak_candle(row, row['date'], self.trade_manager.last_exit_time):
-                result["valid"] = False
-                result["reason"] = "Weak post-cooldown candle"
+                result.valid = False
+                result.reason = "Weak post-cooldown candle"
                 return result
 
         # Same-zone reentry
         if self.trade_manager and self.is_same_zone_reentry(
-                result["entry"], self.trade_manager.last_exit_price,
+                result.entry, self.trade_manager.last_exit_price,
                 self.trade_manager.last_exit_time, row['ATR'], row['date']
         ):
-            result["valid"] = False
-            result["reason"] = "Same-zone reentry"
+            result.valid = False
+            result.reason = "Same-zone reentry"
             return result
 
         # Require pullback before re-entry
         if self.trade_manager and self.trade_manager.last_exit_price and not self.is_reentry_after_pullback(
-                result["entry"], self.trade_manager.last_exit_price, result["signal"], row['ATR']
+                result.entry, self.trade_manager.last_exit_price, result.signal, row['ATR']
         ):
-            result["valid"] = False
-            result["reason"] = "No pullback for re-entry"
+            result.valid = False
+            result.reason = "No pullback for re-entry"
             return result
 
         return result
