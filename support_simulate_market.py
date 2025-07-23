@@ -1,11 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
 import pandas as pd
-import random
+
 import threading
 import uvicorn
 import time
@@ -24,7 +24,7 @@ class Candle(BaseModel):
 
 # ----- Globals -----
 DATA_FILE_PATH = "/Users/hemantsatam/Library/Mobile Documents/com~apple~CloudDocs/projects.iCloud/tradewin/BankNifty/" \
-                 "data/nifty_bank_5min_15yr.csv"
+                 "data/revised_ohlc_breakout_2015_01_13.csv"
 IST = ZoneInfo("Asia/Kolkata")
 SIM_LOCK = threading.Lock()
 
@@ -32,6 +32,30 @@ df_memory = pd.DataFrame()
 sim_current_time = None
 override_candles = {}
 selected_sim_date: Optional[datetime.date] = None
+
+# ---------- Configurations -------------
+# Mapping of market types to specific simulation dates
+MARKET_DATE_MAP = {
+    "sideways": "09/01/15",
+    "breakdown": "12/01/15",
+    "breakout": "13/01/15",
+    "upward_spikes": "14/01/15",
+    "downward_spikes": "15/01/15",
+    "stagnant": "20/01/15",
+    "strong_uptrend": "21/01/15",
+    "strong_downtrend": "22/01/15",
+    "volatile": "23/01/15",
+    "low_volatility": "27/01/15",
+    "bullish_reversal": "28/01/15",
+    "bearish_reversal": "29/01/15",
+    "pullback": "30/01/15",
+    "gap_up": "02/02/15",
+    "range_bound": "03/02/15",
+    "fakeout": "04/02/15"
+}
+
+# Select market condition here — must match key in MARKET_DATE_MAP
+SELECTED_MARKET_CONDITION = os.getenv("MARKET_TYPE", "breakout")
 
 
 # ----- Load and Preprocess -----
@@ -45,9 +69,25 @@ def load_data():
     return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
 
-def pick_random_trading_day(df: pd.DataFrame):
-    unique_days = df.index.normalize().unique()
-    return random.choice(unique_days)
+def pick_simulation_day(df: pd.DataFrame):
+    """Pick a date based on the selected market type configuration."""
+    if SELECTED_MARKET_CONDITION not in MARKET_DATE_MAP:
+        raise ValueError(f"Invalid MARKET_TYPE: {SELECTED_MARKET_CONDITION}. Valid options: {list(MARKET_DATE_MAP)}")
+
+    # Convert string to datetime.date
+    target_date = datetime.strptime(MARKET_DATE_MAP[SELECTED_MARKET_CONDITION], "%d/%m/%y").date()
+
+    # Convert index to naive date for comparison
+    index_dates = df.index.normalize().date
+
+    # Check if date exists
+    if target_date not in index_dates:
+        print("[DEBUG] Available dates in CSV:")
+        print(sorted(set(index_dates)))
+        raise ValueError(f"❌ Target date {target_date} not found in data")
+
+    print(f"[INFO] ✅ Market condition: {SELECTED_MARKET_CONDITION} → Using date: {target_date}")
+    return target_date
 
 
 # ----- Background Thread -----
@@ -69,7 +109,9 @@ async def lifespan(app: FastAPI):
     if df_memory.empty:
         raise RuntimeError("Data load failed — empty DataFrame")
 
-    selected_sim_date = pick_random_trading_day(df_memory)
+    selected_sim_date = pick_simulation_day(df_memory)
+
+    print(f"[INFO] Simulation initialized with date: {selected_sim_date}")
     sim_current_time = datetime.combine(selected_sim_date,
                                         datetime.min.time(), tzinfo=IST) + timedelta(hours=9, minutes=15)
 
@@ -86,7 +128,9 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/historical_data", response_model=List[Candle])
 def get_historical_data(
         symbol: str = "NIFTY_BANK",
-        interval: str = "5minute"
+        interval: str = "5minute",
+        from_date: Optional[datetime] = Query(None),
+        to_date: Optional[datetime] = Query(None)
 ):
     if interval != "5minute":
         return []
@@ -97,24 +141,55 @@ def get_historical_data(
         return {"error": "Simulation not initialized yet. Please retry after startup."}
 
     with SIM_LOCK:
-        end_time = sim_current_time
-        start_time = datetime.combine(selected_sim_date,
-                                      datetime.min.time(), tzinfo=IST) + timedelta(hours=9, minutes=15)
+        # Use passed query params or fallback to simulation values
+        start_time = from_date or datetime.combine(
+            selected_sim_date, datetime.min.time(), tzinfo=IST
+        ) + timedelta(hours=9, minutes=15)
 
-        df_filtered = df_memory[(df_memory.index >= start_time) & (df_memory.index <= end_time)].copy()
+        end_time = to_date or sim_current_time
 
-    # Apply overrides
+        # Ensure both are timezone-aware
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=IST)
+        else:
+            start_time = start_time.astimezone(IST)
+
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=IST)
+        else:
+            end_time = end_time.astimezone(IST)
+
+        # Convert both index and start/end time to tz-naive (or adjust to tz-aware)
+        df_memory.index = df_memory.index.tz_localize(None)
+        start_time = start_time.replace(tzinfo=None)
+        end_time = end_time.replace(tzinfo=None)
+
+        # Filter the DataFrame
+        df_filtered = df_memory[
+            (df_memory.index >= start_time) & (df_memory.index <= end_time)
+            ].copy()
+
+    # Apply override candles if any
     for idx in df_filtered.index:
         if idx in override_candles:
             df_filtered.loc[idx] = override_candles[idx]
 
+    # Reset index and make sure timezone is preserved
     df_filtered.reset_index(inplace=True)
     if df_filtered["date"].dt.tz is None:
-        df_filtered["date"] = df_filtered["date"].dt.tz_localize(IST, nonexistent='NaT', ambiguous='NaT')
+        df_filtered["date"] = df_filtered["date"].dt.tz_localize(IST)
     else:
         df_filtered["date"] = df_filtered["date"].dt.tz_convert(IST)
 
     return df_filtered.to_dict(orient="records")
+
+
+@app.get("/status")
+def get_simulation_status():
+    return {
+        "selected_sim_date": selected_sim_date,
+        "current_sim_time": sim_current_time
+    }
 
 
 @app.post("/override_candle")
