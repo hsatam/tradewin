@@ -4,7 +4,7 @@ from TradeWinUtils import TradeWinUtils
 from TradeWinConfig import LoadTradeWinConfig
 from KiteClient import KiteClient
 from MarketData import MarketData
-from TradeManager import TradeManager
+from trade_manager_refactored import TradeExecutor
 import argparse
 import traceback
 from backtester import Backtester, get_strategy_class
@@ -22,7 +22,8 @@ def run_live_trading(live_config, live_kite):
         logger.warning(f"⚠️ RMS Margin API failed: {e}")
         margins = 250000  # fallback assumption
 
-    trade_manager = TradeManager(kite=live_kite, margins=margins)
+    trade_manager = TradeExecutor(kite=kite)
+    trade_manager.margins = margins
     market_data = MarketData(kite=live_kite, trade_manager=trade_manager, retries=5, backoff=2,
                              entry_buffer=live_config.entry_buffer, sl_factor=live_config.sl_factor,
                              target_factor=live_config.target_factor)
@@ -34,7 +35,7 @@ def run_live_trading(live_config, live_kite):
                 if pnl_today < live_config.MAX_DAILY_LOSS:
                     logger.warning("🛑 Daily loss threshold breached: %.2f < %.2f. Disabling trading for today.",
                                    pnl_today, live_config.MAX_DAILY_LOSS)
-                    trade_manager.db_handler.log_populate()
+                    trade_manager.populate_trade_logs()
                     break
 
                 df = market_data.get_data(live_config, days=4)
@@ -53,13 +54,12 @@ def run_live_trading(live_config, live_kite):
                 last_row = df.iloc[-1]
                 result = market_data.decide_trade_from_row(last_row)
 
-                if result and result.get("valid") and not trade_manager.in_cooldown():
-                    trade_date = result.get("date")
-                    trade_signal = result.get("signal")
-                    trade_price = result.get("entry")
-                    trade_sl = result.get("sl")
-                    # target = result.get("target")
-                    strategy = result.get("strategy")
+                if result and result.valid and not trade_manager.in_cooldown():
+                    trade_date = result.date
+                    trade_signal = result.signal
+                    trade_price = result.entry
+                    trade_sl = result.sl
+                    strategy = result.strategy
 
                     # Avoid new trades after 14:30 unless volatility is high
                     current_time = trade_date.time()
@@ -96,7 +96,7 @@ def run_live_trading(live_config, live_kite):
 
                 if trade_manager.reached_cutoff_time():
                     logger.info("Market close reached. Populating EOD logs.")
-                    trade_manager.db_handler.log_populate()
+                    trade_manager.populate_trade_logs()
                     break
             else:
                 logger.info("Market closed. Sleeping...")
@@ -111,7 +111,8 @@ def run_backtest(bt_config, bt_kite):
     margins = 250000
     file_path = "nifty_bank_5min_15yr.csv"
 
-    trade_manager = TradeManager(kite=bt_kite, margins=margins)
+    trade_manager = TradeExecutor(kite=kite)
+    trade_manager.margins = margins
     market_data = MarketData(kite=bt_kite, trade_manager=trade_manager, retries=5, backoff=2)
 
     try:
@@ -141,7 +142,7 @@ def run_backtest(bt_config, bt_kite):
 
         bt = Backtester(df.copy(), strategy, adaptive_lots=True, trade_manager=trade_manager, market_data=market_data)
         bt.run()
-        trade_manager.db_handler.log_populate()
+        trade_manager.populate_trade_logs()
 
     except Exception as e:
         logger.error(f"❌ Error reading CSV: {e}")
