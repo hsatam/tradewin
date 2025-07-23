@@ -55,7 +55,9 @@ class DBHandler:
     def fetch_pnl_today(self):
         self.cur.execute("SELECT SUM(pnl) as pnl_today FROM trades WHERE time::date = CURRENT_DATE;")
         result = self.cur.fetchone()
-        return (result or {}).get("pnl_today", 0.0)
+        if not result or result["pnl_today"] is None:
+            return 0.0
+        return result["pnl_today"]
 
     def populate_logs(self):
         try:
