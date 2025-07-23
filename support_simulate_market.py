@@ -1,16 +1,18 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
 import pandas as pd
-import os
+import random
 import threading
+import uvicorn
 import time
+import os
 
 
-# Define data model
+# ----- Data Model -----
 class Candle(BaseModel):
     date: datetime
     open: float
@@ -20,23 +22,19 @@ class Candle(BaseModel):
     volume: int
 
 
-# Data file path and initialization
-DATA_FILE_PATH = "/Users/hemantsatam/Library/Mobile Documents/com~apple~CloudDocs/projects.iCloud/tradewin/BankNifty" \
-                 "/data/nifty_bank_5min_15yr.csv"
-SIM_START_DATETIME = datetime(2024, 6, 4, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
-SIM_CURRENT_DATETIME = datetime(2024, 6, 4, 10, 30, tzinfo=ZoneInfo("Asia/Kolkata"))
-# In-memory state
-sim_current_time = SIM_CURRENT_DATETIME
+# ----- Globals -----
+DATA_FILE_PATH = "/Users/hemantsatam/Library/Mobile Documents/com~apple~CloudDocs/projects.iCloud/tradewin/BankNifty/" \
+                 "data/nifty_bank_5min_15yr.csv"
+IST = ZoneInfo("Asia/Kolkata")
+SIM_LOCK = threading.Lock()
+
 df_memory = pd.DataFrame()
+sim_current_time = None
 override_candles = {}
-
-# Track request-based simulation window
-last_request_time = None
-last_sim_end_time = None
-fixed_sim_start_time = None
+selected_sim_date: Optional[datetime.date] = None
 
 
-# Load data from CSV
+# ----- Load and Preprocess -----
 def load_data():
     if os.path.exists(DATA_FILE_PATH):
         df = pd.read_csv(DATA_FILE_PATH)
@@ -47,82 +45,92 @@ def load_data():
     return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
 
-# Background thread to advance simulation time every 5 minutes
+def pick_random_trading_day(df: pd.DataFrame):
+    unique_days = df.index.normalize().unique()
+    return random.choice(unique_days)
+
+
+# ----- Background Thread -----
 def advance_simulation_time():
     global sim_current_time
     while True:
-        time.sleep(300)  # Advance every 5 minutes
-        sim_current_time += timedelta(minutes=5)
+        time.sleep(5)  # simulate faster (every 5 seconds)
+        with SIM_LOCK:
+            sim_current_time += timedelta(minutes=5)
 
 
+# ----- App Initialization -----
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global df_memory
+    global df_memory, sim_current_time, selected_sim_date
+
     df_memory = load_data()
 
-    # Ensure the simulation clock starts even when imported
-    simulation_thread = threading.Thread(target=advance_simulation_time, daemon=True)
-    simulation_thread.start()
+    if df_memory.empty:
+        raise RuntimeError("Data load failed — empty DataFrame")
+
+    selected_sim_date = pick_random_trading_day(df_memory)
+    sim_current_time = datetime.combine(selected_sim_date,
+                                        datetime.min.time(), tzinfo=IST) + timedelta(hours=9, minutes=15)
+
+    thread = threading.Thread(target=advance_simulation_time, daemon=True)
+    thread.start()
 
     yield
 
 
 app = FastAPI(lifespan=lifespan)
 
-# Start background thread once
-simulation_thread = threading.Thread(target=advance_simulation_time, daemon=True)
-simulation_thread.start()
 
-
+# ----- API Endpoints -----
 @app.get("/historical_data", response_model=List[Candle])
 def get_historical_data(
         symbol: str = "NIFTY_BANK",
-        interval: str = "5minute",
-        from_date: datetime = Query(None, description="Start datetime"),
-        to_date: datetime = Query(None, description="End datetime")
+        interval: str = "5minute"
 ):
     if interval != "5minute":
         return []
 
-    global df_memory, last_request_time, last_sim_end_time, sim_current_time, fixed_sim_start_time
+    global selected_sim_date, sim_current_time
 
-    now = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
+    if selected_sim_date is None or sim_current_time is None:
+        return {"error": "Simulation not initialized yet. Please retry after startup."}
 
-    if last_request_time is None or last_sim_end_time is None:
-        # First request — store fixed start time
-        fixed_sim_start_time = from_date.replace(tzinfo=ZoneInfo("Asia/Kolkata")) if from_date else SIM_START_DATETIME
-        sim_end = to_date.replace(tzinfo=ZoneInfo("Asia/Kolkata")) if to_date else fixed_sim_start_time + timedelta(minutes=5)
-    else:
-        # On subsequent requests, only extend sim_end based on elapsed time
-        elapsed = now - last_request_time
-        sim_end = last_sim_end_time + elapsed
+    with SIM_LOCK:
+        end_time = sim_current_time
+        start_time = datetime.combine(selected_sim_date,
+                                      datetime.min.time(), tzinfo=IST) + timedelta(hours=9, minutes=15)
 
-    last_request_time = now
-    last_sim_end_time = sim_end
+        df_filtered = df_memory[(df_memory.index >= start_time) & (df_memory.index <= end_time)].copy()
 
-    sim_start = fixed_sim_start_time
-
-    df_filtered = df_memory[(df_memory.index >= sim_start) & (df_memory.index <= sim_end)].copy()
-
-    # Apply runtime overrides
-    for idx, row in df_filtered.iterrows():
+    # Apply overrides
+    for idx in df_filtered.index:
         if idx in override_candles:
             df_filtered.loc[idx] = override_candles[idx]
 
     df_filtered.reset_index(inplace=True)
+    if df_filtered["date"].dt.tz is None:
+        df_filtered["date"] = df_filtered["date"].dt.tz_localize(IST, nonexistent='NaT', ambiguous='NaT')
+    else:
+        df_filtered["date"] = df_filtered["date"].dt.tz_convert(IST)
+
     return df_filtered.to_dict(orient="records")
 
 
-# Endpoint to override candle data in-memory
 @app.post("/override_candle")
-def override_candle(date: datetime, open: float, high: float, low: float, close: float, volume: int):
-    global override_candles
-    date = date.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+def override_candle(
+        date: datetime,
+        open: float,
+        high: float,
+        low: float,
+        close: float,
+        volume: int
+):
+    date = date.replace(tzinfo=IST)
     override_candles[date] = [open, high, low, close, volume]
     return {"status": "override applied", "timestamp": date}
 
 
+# ----- Main Entrypoint -----
 if __name__ == "__main__":
-    import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
