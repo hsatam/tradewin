@@ -32,6 +32,7 @@ df_memory = pd.DataFrame()
 sim_current_time = None
 override_candles = {}
 selected_sim_date: Optional[datetime.date] = None
+current_row_index = 0
 
 # ---------- Configurations -------------
 # Mapping of market types to specific simulation dates
@@ -64,6 +65,7 @@ def load_data():
         df = pd.read_csv(DATA_FILE_PATH)
         df["date"] = pd.to_datetime(df["date"])
         df.set_index("date", inplace=True)
+        df.index = df.index.tz_localize(None)
         df.sort_index(inplace=True)
         return df
     return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
@@ -92,11 +94,17 @@ def pick_simulation_day(df: pd.DataFrame):
 
 # ----- Background Thread -----
 def advance_simulation_time():
-    global sim_current_time
-    while True:
-        time.sleep(5)  # simulate faster (every 5 seconds)
+    global sim_current_time, df_memory, current_row_index
+
+    available_times = sorted(df_memory.index)
+
+    while current_row_index < len(available_times):
         with SIM_LOCK:
-            sim_current_time += timedelta(minutes=5)
+            sim_current_time = available_times[current_row_index]
+            current_row_index += 1
+        time.sleep(5)
+
+    print(f"[INFO] ⏹️ End of simulation reached at {sim_current_time}")
 
 
 # ----- App Initialization -----
@@ -105,15 +113,27 @@ async def lifespan(app: FastAPI):
     global df_memory, sim_current_time, selected_sim_date
 
     df_memory = load_data()
-
     if df_memory.empty:
         raise RuntimeError("Data load failed — empty DataFrame")
 
     selected_sim_date = pick_simulation_day(df_memory)
 
+    if hasattr(selected_sim_date, 'tzinfo'):
+        selected_sim_date = selected_sim_date.replace(tzinfo=None)
+
+    df_memory_full = df_memory.copy()
+    df_memory = df_memory_full[df_memory_full.index.date == selected_sim_date].copy()
+    if df_memory.empty:
+        raise RuntimeError(f"No data found for selected simulation date: {selected_sim_date}")
+
+    sim_current_time = df_memory.index.min()
+
+    if df_memory.empty:
+        raise RuntimeError("Data load failed — empty DataFrame")
+
+    # selected_sim_date = pick_simulation_day(df_memory)
+
     print(f"[INFO] Simulation initialized with date: {selected_sim_date}")
-    sim_current_time = datetime.combine(selected_sim_date,
-                                        datetime.min.time(), tzinfo=IST) + timedelta(hours=9, minutes=15)
 
     thread = threading.Thread(target=advance_simulation_time, daemon=True)
     thread.start()
@@ -165,17 +185,19 @@ def get_historical_data(
         end_time = end_time.replace(tzinfo=None)
 
         # Filter the DataFrame
-        df_filtered = df_memory[
-            (df_memory.index >= start_time) & (df_memory.index <= end_time)
-            ].copy()
+        df_filtered = df_memory[(df_memory.index >= start_time) & (df_memory.index <= sim_current_time)].copy()
+
+    if 'date' not in df_filtered.columns:
+        df_filtered['date'] = df_filtered.index
+    else:
+        df_filtered = df_filtered.copy()
+        df_filtered['date'] = df_filtered.index
 
     # Apply override candles if any
     for idx in df_filtered.index:
         if idx in override_candles:
             df_filtered.loc[idx] = override_candles[idx]
 
-    # Reset index and make sure timezone is preserved
-    df_filtered.reset_index(inplace=True)
     if df_filtered["date"].dt.tz is None:
         df_filtered["date"] = df_filtered["date"].dt.tz_localize(IST)
     else:
