@@ -161,6 +161,9 @@ class MarketData:
                 result.reason = "Weak post-cooldown candle"
                 return result
 
+        if isinstance(row['date'], pd.Timestamp) and row['date'].tzinfo is None:
+            row['date'] = row['date'].replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+
         # Same-zone reentry
         if self.trade_manager and self.is_same_zone_reentry(
                 result.entry, self.trade_manager.last_exit_price,
@@ -200,8 +203,16 @@ class MarketData:
         """
         if not last_exit_price or not last_exit_time:
             return False
+
+        # Ensure both datetime are tz-aware and in the same timezone
+        if last_exit_time.tzinfo is None:
+            last_exit_time = last_exit_time.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+
         price_diff = abs(price - last_exit_price)
         time_diff = (current_time - last_exit_time).total_seconds()
+
         return price_diff < 0.5 * atr and time_diff < 900  # 15 minutes
 
     @staticmethod
