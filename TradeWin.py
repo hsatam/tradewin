@@ -47,7 +47,7 @@ def run_live_trading(live_config, live_kite):
                 df = market_data.prepare_indicators(df)
 
                 if df is None or df.empty or len(df) < 15:
-                    logger.info("Waiting for sufficient data...")
+                    logger.info(f"Waiting for sufficient data...{len(df)}")
                     time.sleep(60)
                     continue
 
