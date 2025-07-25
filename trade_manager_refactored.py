@@ -1,5 +1,6 @@
 # trade_manager_refactored.py
 
+from dataclasses import dataclass
 from datetime import datetime
 import pandas as pd
 from zoneinfo import ZoneInfo
@@ -9,11 +10,12 @@ from TradeWinUtils import TradeWinUtils
 from TradeLogger import TradeLogger
 from SLManager import SLManager
 from DBHandler import DBHandler
-
+import time
 from log_config import get_logger
 logger = get_logger()
 
 
+@dataclass
 class TradeState:
     def __init__(self):
         self.stop_loss = None
@@ -29,6 +31,8 @@ class TradeState:
         self.entry_price = None
         self.position = None
         self.date = None
+        self.qty = 0
+        self.trade_type = None
         self.reset()
 
     def reset(self):
@@ -45,6 +49,8 @@ class TradeState:
         self.last_exit_time = None
         self.last_sl_update_time = None
         self.date = None
+        self.qty = 0
+        self.trade_type = None
 
 
 class TradeExecutor:
@@ -111,6 +117,8 @@ class TradeExecutor:
         self.state.target_price = self._adjust_target_price(action)
         self.state.date = date
         self.lots = lots
+        self.state.qty = self.config.TRADE_QTY * lots
+        self.state.trade_type = action  # BUY or SELL
 
     def _adjust_target_price(self, action):
         atr = self.atr or 20
@@ -144,10 +152,37 @@ class TradeExecutor:
         self.state.reset()
 
     def _calculate_pnl(self, exit_price):
-        raw = (exit_price - self.state.entry_price if self.state.position == "BUY"
-               else self.state.entry_price - exit_price) * self.config.TRADE_QTY * self.lots
-        charges = 250 if self.state.position == "BUY" else 100
-        return round(raw - charges, 2)
+        entry = self.state.entry_price
+        qty = self.state.qty
+        trade_type = self.state.trade_type
+        direction = self.state.trade_direction
+
+        # Gross PnL
+        gross_pnl = (entry - exit_price) * qty if direction == "SELL" else (exit_price - entry) * qty
+
+        # Charges calculation
+        turnover = (entry + exit_price) * qty
+        brokerage = min(20, 0.0003 * turnover) * 2  # max ₹20 per leg
+        stt = 0.00025 * exit_price * qty if trade_type == "SELL" else 0
+        gst = 0.18 * brokerage
+        sebi = 0.000001 * turnover
+        stamp = 0.00003 * entry * qty if trade_type == "BUY" else 0
+
+        total_charges = brokerage + stt + gst + sebi + stamp
+        net_pnl = gross_pnl - total_charges
+
+        logger.debug(f"""
+            🧾 Charge Breakdown:
+            ➖ Gross PnL: {gross_pnl:.2f}
+            ➖ Brokerage: {brokerage:.2f}
+            ➖ STT: {stt:.2f}
+            ➖ GST: {gst:.2f}
+            ➖ SEBI: {sebi:.2f}
+            ➖ Stamp Duty: {stamp:.2f}
+            💰 Net PnL: {net_pnl:.2f}
+        """)
+
+        return round(net_pnl, 2)
 
     def in_cooldown(self, now=None):
         if not self.state.last_exit_time:
@@ -175,8 +210,6 @@ class TradeExecutor:
         Monitor an active trade. Fetch price data using `get_data_func`,
         enrich with indicators via `prepare_func`, and update trade status.
         """
-        import time
-        from datetime import datetime
 
         try:
             while True:
@@ -203,13 +236,22 @@ class TradeExecutor:
 
                 if self.state.trade_direction == "SELL" and current_price > self.state.stop_loss:
                     logger.info("❌ SL hit for SELL trade at %.2f", current_price)
-                    self.last_exit_time = datetime.now()
-                    self.last_exit_price = current_price
+                    pnl = self._calculate_pnl(current_price)
+                    self.margins += pnl
+                    logger.info("💸 P&L after SL hit: %.2f (including charges)", pnl)
+                    self.db.record_trade(self.logger.prepare_trade_data(self.state,
+                                                                        exit_price=current_price, pnl=pnl, exited=True))
+                    self._update_exit_state(current_price)
                     break
+
                 elif self.state.trade_direction == "BUY" and current_price < self.state.stop_loss:
                     logger.info("❌ SL hit for BUY trade at %.2f", current_price)
-                    self.last_exit_time = datetime.now()
-                    self.last_exit_price = current_price
+                    pnl = self._calculate_pnl(current_price)
+                    self.margins += pnl
+                    logger.info("💸 P&L after SL hit: %.2f (including charges)", pnl)
+                    self.db.record_trade(self.logger.prepare_trade_data(self.state,
+                                                                        exit_price=current_price, pnl=pnl, exited=True))
+                    self._update_exit_state(current_price)
                     break
 
                 # Add your exit conditions here...
@@ -218,3 +260,13 @@ class TradeExecutor:
 
         except KeyboardInterrupt:
             logger.info("🔁 Monitor loop interrupted manually.")
+
+    def calculate_brokerage(self, entry, texit, qty):
+        turnover = (entry + texit) * qty
+        brokerage = min(20, 0.0003 * turnover) * 2  # Zerodha-style
+        stt = 0.00025 * texit * qty if self.state.trade_type == "SELL" else 0
+        gst = 0.18 * brokerage
+        sebi = 0.000001 * turnover
+        stamp = 0.00003 * entry * qty if self.state.trade_type == "BUY" else 0
+        total = brokerage + stt + gst + sebi + stamp
+        return round(total, 2)
