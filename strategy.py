@@ -109,7 +109,8 @@ class VWAPStrategy:
                 # Skip weak candles
                 return TradeDecision(
                     date=None, signal=None, entry=None, sl=None, target=None,
-                    valid=False, strategy=None, reason="Weak candle")
+                    valid=False, strategy=None, reason=f"Weak candle - Candle Range {round(candle_range,0)} and "
+                                                       f"body {round(body,2)} < {round(0.25 * candle_range,2)}")
 
             if pd.isna(entry) or pd.isna(atr):
                 return TradeDecision(
@@ -124,7 +125,7 @@ class VWAPStrategy:
             if atr / entry < 0.0001 or atr < 5:
                 return TradeDecision(
                     date=None, signal=None, entry=None, sl=None, target=None,
-                    valid=False, strategy=None, reason="ATR too low")
+                    valid=False, strategy=None, reason=f"ATR too low {atr} < 5")
 
             threshold_above = vwap + self.dev * entry
             threshold_below = vwap - self.dev * entry
@@ -138,7 +139,8 @@ class VWAPStrategy:
                 if (target - entry) < self.rr_threshold * (entry - sl):
                     return TradeDecision(
                         date=None, signal=None, entry=None, sl=None, target=None,
-                        valid=ok, strategy=None, reason="Risk/reward too low")
+                        valid=ok, strategy=None, reason=f"Risk/reward too low {(target - entry)} < "
+                                                        f"{self.rr_threshold * (entry - sl)}")
 
                 return TradeDecision(
                     date=dt, signal="BUY", entry=entry, sl=sl, target=target, valid=ok, strategy="VWAP_REV")
@@ -152,7 +154,8 @@ class VWAPStrategy:
                 if (entry - target) < self.rr_threshold * (sl - entry):
                     return TradeDecision(
                         date=None, signal=None, entry=None, sl=None, target=None,
-                        valid=ok, strategy=None, reason="Risk/reward too low")
+                        valid=ok, strategy=None, reason=f"Risk/reward too low {(entry - target)} < "
+                                                        f"{self.rr_threshold * (sl - entry)}")
 
                 return TradeDecision(
                     date=dt, signal="SELL", entry=entry, sl=sl, target=target, valid=ok, strategy="VWAP_REV")
@@ -180,23 +183,24 @@ class ORBStrategy:
             body = abs(row['close'] - row['open'])
             candle_range = row['high'] - row['low']
 
-            if candle_range < 5 or body < 0.25 * candle_range:
-                # Skip weak candles
-                return TradeDecision(
-                    date=None, signal=None, entry=None, sl=None, target=None,
-                    valid=False, strategy=None, reason="Weak candle")
-
             current_time = row['date'].time()
             if not (dt_time(9, 30) <= current_time <= dt_time(15, 25)):
                 return TradeDecision(
                     date=None, signal=None, entry=None, sl=None, target=None,
                     valid=False, strategy=None, reason="Outside trading window")
 
+            if candle_range < 5 or body < 0.25 * candle_range:
+                # Skip weak candles
+                return TradeDecision(
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy=None, reason=f"Weak candle Candle Range {round(candle_range,0)} < 5 - "
+                                                       f"Body {round(body,2)} < {round(0.25 * candle_range, 2)}")
+
             atr = row['ATR']
             if pd.isna(atr) or atr < 10:  # Lower the threshold
                 return TradeDecision(
                     date=None, signal=None, entry=None, sl=None, target=None,
-                    valid=False, strategy=None, reason="ATR too low or missing")
+                    valid=False, strategy=None, reason=f"ATR too low or missing {round(atr, 2)} < 10")
 
             bullish = row['close_prev_1'] > row['open_prev_1']
             bearish = row['close_prev_1'] < row['open_prev_1']
