@@ -59,6 +59,7 @@ class MarketData:
         # Retry mechanism
         self.retries = retries
         self.backoff = backoff
+        self.first_time_weekend_test_load = True
 
         # Map to hold selected strategy per day
         self.daily_strategy_map = {}
@@ -78,31 +79,66 @@ class MarketData:
         """Fetch market data using Kite API or local mock server based on config."""
 
         def fetch():
+            df = None
             try:
                 if config.WEEKEND_TESTING:
-                    resp = requests.get("http://localhost:8000/historical_data", params={
-                        "symbol": "NIFTY_BANK",
-                        "interval": "5minute"
-                    })
-                    df = pd.DataFrame(resp.json())
+                    retry_count = 0
+                    max_retries = 3
+
+                    while retry_count < max_retries:
+                        response = requests.get("http://localhost:8000/historical_data", params={
+                            "symbol": "NIFTY_BANK",
+                            "interval": "5minute"
+                        })
+
+                        if response.status_code == 200:
+                            data = pd.DataFrame(response.json())
+                            if data.empty or len(data) < 15:
+                                logger.info(f"Waiting for sufficient data...{len(data)}")
+                                retry_count += 1
+                                time.sleep(1)
+                                continue
+                            else:
+                                df = data.reset_index(drop=True)
+                                df['datetime'] = pd.to_datetime(df['date'])
+                                df.set_index('datetime', inplace=True)
+                                return df
+                        else:
+                            logger.warning(f"Simulator error: {response.status_code}")
+                            retry_count += 1
+                            time.sleep(1)
+
+                    logger.warning("❌ No more data from simulator after multiple attempts — aborting.")
+                    return pd.DataFrame()  # Return empty DataFrame instead of None
+
                 else:
                     instrument = self.kite.ltp([f"NFO:{config.SYMBOL}"])[f"NFO:{config.SYMBOL}"]["instrument_token"]
                     df = pd.DataFrame(self.kite.historical_data(
                         instrument,
                         pd.Timestamp.now() - pd.Timedelta(days=days),
-                        pd.Timestamp.now(), config.INTERVAL
+                        pd.Timestamp.now(),
+                        config.INTERVAL
                     ))
 
+                # ✅ Common post-processing for both simulator and Kite
                 df['datetime'] = pd.to_datetime(df['date'])
                 df.set_index('datetime', inplace=True)
                 df = df[~df.index.duplicated(keep='first')]
                 df['date'] = df.index
                 return df[['open', 'high', 'low', 'close', 'volume']]
+
             except Exception as e:
-                logger.error(f"Failed to fetch data: {e}")
+                logger.error(f"❌ Failed to fetch data: {e}", exc_info=True)
                 return None
 
-        return self.retry_with_backoff(fetch)
+        if config.WEEKEND_TESTING:
+            df = fetch()
+            if df.empty:
+                raise ValueError("❌ Failed to fetch data: simulator did not return enough data.")
+            df = IndicatorCalculator.initialize_date_column(df)
+            return IndicatorCalculator.add_technical_indicators(df)
+        else:
+            return self.retry_with_backoff(fetch)
 
     def prepare_indicators(self, df):
         """
@@ -113,6 +149,7 @@ class MarketData:
         df = df.copy()
         df = IndicatorCalculator.initialize_date_column(df)
         df = IndicatorCalculator.add_technical_indicators(df)
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
         df = StrategyApplier.assign_strategy_levels(
             df,
             self.entry_buffer,
@@ -137,7 +174,7 @@ class MarketData:
 
         # Skip if not valid
         if not result.valid:
-            logger.debug(f"Decision rejected — Reason: {result.reason}")
+            logger.debug(f"Decision rejected — {result.reason}")
             return result
 
         # ----- Inject custom filters here -----
