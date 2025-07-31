@@ -14,16 +14,16 @@ class SLManager:
         """
         Apply trailing SL logic and update SL if needed.
         """
-        age_seconds = (trade_date - state.entry_time).seconds if state.entry_time else 0
+        age_seconds = SLManager._age_seconds(state, trade_date)
 
         if age_seconds < 120:
             logger.debug("⏳ Skipping SL trail — trade age under 2 min")
             return
 
-        near_target = abs(current_price - state.target_price) <= 0.5 * atr
+        near_target = abs(current_price - state.target_price) <= 0.25 * atr
         if near_target:
             logger.info("📌 Near target — tightening SL aggressively")
-            new_sl = current_price - 10 if state.position == "BUY" else current_price + 10
+            new_sl = current_price - 30 if state.position == "BUY" else current_price + 30
             self._maybe_update_sl(state, trade_date, new_sl, current_price, db)
             return
 
@@ -34,7 +34,7 @@ class SLManager:
 
     def _handle_buy_sl(self, state, trade_date, price, atr, db):
         move = price - state.entry_price
-        fallback_sl = price - (50 if self._age_seconds(state, trade_date) > 1800 else atr)
+        fallback_sl = price - (min(50, atr) if self._age_seconds(state, trade_date) > 1800 else atr)
         new_sl = price - atr * 0.6
 
         if move >= atr:
@@ -46,7 +46,7 @@ class SLManager:
 
     def _handle_sell_sl(self, state, trade_date, price, atr, db):
         move = state.entry_price - price
-        fallback_sl = price + (50 if self._age_seconds(state, trade_date) > 1800 else atr)
+        fallback_sl = price + (min(50, atr) if self._age_seconds(state, trade_date) > 1800 else atr)
         new_sl = price + atr * 0.6
 
         if move >= atr:
@@ -60,7 +60,7 @@ class SLManager:
     def _maybe_update_sl(state, trade_date, new_sl, price, db):
         new_sl = round(new_sl, 2)
         if abs(new_sl - state.stop_loss) < 0.01:
-            logger.debug("Trailing SL unchanged — %.2f", state.stop_loss)
+            logger.debug("SL unchanged — %.2f", state.stop_loss)
             return
 
         if state.position == "BUY" and new_sl <= state.stop_loss:
@@ -70,7 +70,7 @@ class SLManager:
 
         state.stop_loss = new_sl
         state.last_sl_update_time = trade_date
-        logger.info("📉 Trailing SL updated to %.2f — Current price %.2f", new_sl, price)
+        logger.info("📉 Price: %.2f | SL: %.2f", price, new_sl)
         db.record_trade({
             "trade_id": state.trade_id,
             "time": trade_date.isoformat(),
@@ -89,4 +89,7 @@ class SLManager:
 
     @staticmethod
     def _age_seconds(state, trade_date):
-        return (trade_date - state.entry_time).seconds if state.entry_time else 0
+        if state.entry_time is None or not isinstance(trade_date, datetime):
+            return 0
+
+        return int((trade_date - state.entry_time).total_seconds())
