@@ -1,5 +1,6 @@
 import pandas as pd
 import time
+import sys
 from TradeWinUtils import TradeWinUtils
 from TradeWinConfig import LoadTradeWinConfig
 from KiteClient import KiteClient
@@ -26,7 +27,8 @@ def run_live_trading(live_config, live_kite):
     trade_manager.margins = margins
     market_data = MarketData(kite=live_kite, trade_manager=trade_manager, retries=5, backoff=2,
                              entry_buffer=live_config.entry_buffer, sl_factor=live_config.sl_factor,
-                             target_factor=live_config.target_factor)
+                             target_factor=live_config.target_factor, sl_mult=live_config.vwap_sl_mult,
+                             target_mult=live_config.vwap_target_mult, rr_threshold=live_config.vwap_rr_threshold)
 
     try:
         while True:
@@ -37,18 +39,17 @@ def run_live_trading(live_config, live_kite):
                                    pnl_today, live_config.MAX_DAILY_LOSS)
                     trade_manager.populate_trade_logs()
                     break
-
-                df = market_data.get_data(live_config, days=4)
-                if df is None:
-                    logger.warning("Received no data from market_data.get_data(); retrying...")
-                    time.sleep(60)
-                    continue
+                try:
+                    df = market_data.get_data(live_config, days=4)
+                except ValueError as e:
+                    logger.error(f"❌ Error in get_data_func during monitoring: {e}")
+                    sys.exit(1)
 
                 df = market_data.prepare_indicators(df)
 
                 if df is None or df.empty or len(df) < 15:
                     logger.info(f"Waiting for sufficient data...{len(df)}")
-                    time.sleep(60)
+                    time.sleep(live_config.SLEEP_INTERVAL)
                     continue
 
                 last_row = df.iloc[-1]
@@ -70,7 +71,7 @@ def run_live_trading(live_config, live_kite):
                         if curr_atr < 1.2 * avg_atr:
                             logger.warning(f"⛔ Skipping new trade after 14:30 — ATR {curr_atr:.2f} "
                                            f"below threshold {1.2 * avg_atr:.2f}")
-                            time.sleep(60)
+                            time.sleep(live_config.SLEEP_INTERVAL)
                             continue  # skip trade
                         else:
                             logger.info(f"⚡ High volatility trade allowed post 14:30 — ATR: {curr_atr:.2f} "
@@ -80,27 +81,33 @@ def run_live_trading(live_config, live_kite):
                         trade_manager.atr = df.iloc[-1]['ATR']
                         trade_manager.place_order(
                             trade_date, trade_signal, trade_price, trade_sl, strategy,
-                            (max(1, int(margins // 250000)) * (live_config.TRADE_QTY // 35))
+                            (max(1, int(margins // 250000)) * (live_config.TRADE_QTY // live_config.TRADE_QTY))
                         )
-                        trade_manager.monitor_trade(lambda: market_data.get_data(config),
-                                                    prepare_func=market_data.prepare_indicators, interval=60)
+                        try:
+                            trade_manager.monitor_trade(lambda: market_data.get_data(live_config),
+                                                        prepare_func=market_data.prepare_indicators,
+                                                        interval=live_config.SLEEP_INTERVAL)
+                        except ValueError as e:
+                            logger.error(f"❌ Error in get_data_func during monitoring: {e}")
+                            break
                     else:
                         if result and not result.valid:
-                            logger.info(f"No Signal — Reason: {result.reason}")
+                            logger.info(f"No Signal — {result.reason}")
                         else:
                             logger.info("No BUY / SELL Signal...")
 
-                        time.sleep(60)
+                        time.sleep(live_config.SLEEP_INTERVAL)
                 else:
                     if trade_manager.in_cooldown():
-                        logger.info(f"In {live_config.COOLDOWN_MINUTES} minutes Cooldown...")
-                        time.sleep(live_config.COOLDOWN_MINUTES * 60)
+                        cooldown_mins = max(live_config.COOLDOWN_MINUTES * 60, live_config.SLEEP_INTERVAL)
+                        logger.info(f"In Cooldown... Waiting {round(cooldown_mins/60)} minutes.")
+                        time.sleep(cooldown_mins)
                     else:
                         if result and not result.valid:
-                            logger.info(f"No Signal — Reason: {result.reason}")
+                            logger.info(f"No Signal — {result.reason}")
                         else:
                             logger.info("No BUY / SELL Signal...")
-                        time.sleep(60)
+                        time.sleep(live_config.SLEEP_INTERVAL)
 
                 if trade_manager.reached_cutoff_time():
                     logger.info("Market close reached. Populating EOD logs.")
@@ -108,7 +115,7 @@ def run_live_trading(live_config, live_kite):
                     break
             else:
                 logger.info("Market closed. Sleeping...")
-                time.sleep(300)
+                time.sleep(live_config.SLEEP_INTERVAL * 5)
     except KeyboardInterrupt:
         logger.info("\n🛑 Manual interrupt. Exiting...")
 
@@ -121,7 +128,8 @@ def run_backtest(bt_config, bt_kite):
 
     trade_manager = TradeExecutor(kite=kite)
     trade_manager.margins = margins
-    market_data = MarketData(kite=bt_kite, trade_manager=trade_manager, retries=5, backoff=2)
+    market_data = MarketData(
+        kite=bt_kite, strategy=config.strategy_mode, trade_manager=trade_manager, retries=5, backoff=2)
 
     try:
         df = pd.read_csv(file_path, index_col=0)
