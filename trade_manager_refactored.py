@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-import pandas as pd
 from zoneinfo import ZoneInfo
 
 from TradeWinConfig import LoadTradeWinConfig
@@ -10,6 +9,7 @@ from TradeWinUtils import TradeWinUtils
 from TradeLogger import TradeLogger
 from SLManager import SLManager
 from DBHandler import DBHandler
+from entry_filters import post_entry_health_check
 import time
 from log_config import get_logger
 logger = get_logger()
@@ -33,6 +33,7 @@ class TradeState:
         self.date = None
         self.qty = 0
         self.trade_type = None
+        self.checked_post_entry = False
         self.reset()
 
     def reset(self):
@@ -49,6 +50,7 @@ class TradeState:
         self.last_exit_time = None
         self.last_sl_update_time = None
         self.date = None
+        self.checked_post_entry = False
         self.qty = 0
         self.trade_type = None
 
@@ -69,6 +71,7 @@ class TradeExecutor:
 
         self.last_exit_time = None
         self.last_exit_price = None
+        self.cooldown_secs = self.config.COOLDOWN_MINUTES * 60
 
     def place_order(self, trade_date, action, price, stoploss, strategy, lots):
 
@@ -89,7 +92,9 @@ class TradeExecutor:
         if not self.config.PAPER_TRADING:
             self._place_kite_order(action)
 
-        logger.info("🆕 Placed %s order at %.2f with SL %.2f", action, price, stoploss)
+        self.state.open_trade = True
+
+        logger.info("🆕 %s: %.2f | SL: %.2f", action, price, stoploss)
 
     def _place_kite_order(self, action):
         side = self.kite.TRANSACTION_TYPE_BUY if action == "BUY" else self.kite.TRANSACTION_TYPE_SELL
@@ -146,10 +151,18 @@ class TradeExecutor:
         self.db.record_trade(self.logger.prepare_trade_data(self.state, exit_price=price, pnl=pnl, exited=True))
         self._update_exit_state(price)
 
+        # update state: mark trade closed and record exit time
+        self.state.open_trade = False
+        self.state.last_exit_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
+        self.state.entry_price = None
+        self.state.stop_loss = None
+        self.state.trade_direction = None
+        self.state.strategy = None
+
     def _update_exit_state(self, price):
+        self.state.reset()
         self.state.last_exit_price = price
         self.state.last_exit_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-        self.state.reset()
 
     def _calculate_pnl(self, exit_price):
         entry = self.state.entry_price
@@ -184,14 +197,22 @@ class TradeExecutor:
 
         return round(net_pnl, 2)
 
-    def in_cooldown(self, now=None):
-        if not self.state.last_exit_time:
+    def in_cooldown(self) -> bool:
+        """Return True if within the cooldown period since last exit."""
+        last = self.state.last_exit_time
+
+        if last is None or not isinstance(last, datetime):
             return False
-        now = now or datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-        return (now - self.state.last_exit_time) < pd.Timedelta(minutes=self.config.COOLDOWN_MINUTES)
+
+        # Use the same tzinfo as last_exit_time to compute elapsed
+        now = datetime.now(tz=last.tzinfo) if last.tzinfo else datetime.now()
+        elapsed = now - last
+
+        return elapsed.total_seconds() < self.cooldown_secs
 
     def reached_cutoff_time(self):
         return not self.config.WEEKEND_TESTING and datetime.now().time() >= datetime.strptime("15:25", "%H:%M").time()
+        # return datetime.now().time() >= datetime.strptime("15:25", "%H:%M").time()
 
     def fetch_pnl_today(self):
         return self.db.fetch_pnl_today()
@@ -228,31 +249,41 @@ class TradeExecutor:
 
                 # Example: check SL or target
                 current_price = df['close'].iloc[-1]
-                logger.info(f"📈 Monitoring trade — Current price: {current_price:.2f} | "
-                            f"Stop Loss: {self.state.stop_loss:.2f} | ATR: {self.atr:.2f}")
+                logger.info(f"📈 Price: {current_price:.2f} | SL: {self.state.stop_loss:.2f}")
 
                 # Call trailing SL manager
                 self.check_trailing_sl(df.index[-1], current_price)
 
                 if self.state.trade_direction == "SELL" and current_price > self.state.stop_loss:
-                    logger.info("❌ SL hit for SELL trade at %.2f", current_price)
+                    logger.info("❌ SELL: SL hit at %.2f", current_price)
                     pnl = self._calculate_pnl(current_price)
                     self.margins += pnl
-                    logger.info("💸 P&L after SL hit: %.2f (including charges)", pnl)
-                    self.db.record_trade(self.logger.prepare_trade_data(self.state,
-                                                                        exit_price=current_price, pnl=pnl, exited=True))
+                    logger.info("💸 P&L: %.2f (incl. charges)", pnl)
+                    self.db.record_trade(
+                        self.logger.prepare_trade_data(self.state, exit_price=current_price, pnl=pnl, exited=True))
                     self._update_exit_state(current_price)
+                    self.state.last_exit_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
                     break
 
                 elif self.state.trade_direction == "BUY" and current_price < self.state.stop_loss:
-                    logger.info("❌ SL hit for BUY trade at %.2f", current_price)
+                    logger.info("❌ BUY: SL hit at %.2f", current_price)
                     pnl = self._calculate_pnl(current_price)
                     self.margins += pnl
-                    logger.info("💸 P&L after SL hit: %.2f (including charges)", pnl)
-                    self.db.record_trade(self.logger.prepare_trade_data(self.state,
-                                                                        exit_price=current_price, pnl=pnl, exited=True))
+                    logger.info("💸 P&L: %.2f (incl. charges)", pnl)
+                    self.db.record_trade(
+                        self.logger.prepare_trade_data(self.state, exit_price=current_price, pnl=pnl, exited=True))
                     self._update_exit_state(current_price)
+                    self.state.last_exit_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
                     break
+                elif self.state.entry_time and not self.state.checked_post_entry:
+                    df = get_data_func()
+                    df = prepare_func(df)
+                    if df is not None and len(df) > 5:
+                        passed = post_entry_health_check(df, self.state.entry_time)
+                        self.state.checked_post_entry = True
+                        if not passed:
+                            logger.info("⚠️ Weak follow-through detected after entry. Exiting early.")
+                            self.exit_trade(price=self.state.entry_price, reason="Weak post-entry momentum")
 
                 # Add your exit conditions here...
 
@@ -260,13 +291,6 @@ class TradeExecutor:
 
         except KeyboardInterrupt:
             logger.info("🔁 Monitor loop interrupted manually.")
-
-    def calculate_brokerage(self, entry, texit, qty):
-        turnover = (entry + texit) * qty
-        brokerage = min(20, 0.0003 * turnover) * 2  # Zerodha-style
-        stt = 0.00025 * texit * qty if self.state.trade_type == "SELL" else 0
-        gst = 0.18 * brokerage
-        sebi = 0.000001 * turnover
-        stamp = 0.00003 * entry * qty if self.state.trade_type == "BUY" else 0
-        total = brokerage + stt + gst + sebi + stamp
-        return round(total, 2)
+        except Exception as e:
+            logger.error(f"❌ Error in get_data_func during monitoring: {e}")
+            return
