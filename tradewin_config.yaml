@@ -1,20 +1,17 @@
 API_KEY : "69w63z1zdavw0uxf"                        # API Key for Tradewin
 API_SECRET : "q16utdl041f9vbfaiszkjbz7sq8icj6q"     # API Secret Key for Tradewin
-SYMBOL : "BANKNIFTY25JULFUT"                        # Futures Symbol to trade in - (Indix - NSE:NIFTY BANK)
+SYMBOL : "BANKNIFTY25AUGFUT"                        # Futures Symbol to trade in - (Index - NSE:NIFTY BANK)
 INTERVAL : "5minute"                                # Interval to fetch data
 TRADE_QTY : 35                                      # Quantity to trade 35 = 1 Lot
 TRAIL_AMOUNT : 100                                  # Points to trail SL
 PAPER_TRADING : True                                # TRUE for Paper Trading
 TOKEN_FILE : "request_token.txt"                    # File to save token into
 strategy_name: "ORB"
+strategy_mode: adaptive
 vwap_dev: 0.0025
-sl_mult: 0.5
-target_mult: 2.5
-rr_threshold: 1.2
-entry_buffer: 0.5
-sl_factor: 1.5
-target_factor: 1.5
 WEEKEND_TESTING: False
+SLEEP_INTERVAL: 60       # 60
+COOLDOWN_MINUTES: 10     # 10
 DB_USER: "hemantsatam"
 DB_PASS: ""
 DB_NAME: "TradeWin"
@@ -22,16 +19,16 @@ DB_HOST: "localhost"
 DB_PORT: 5432
 FROM_DATE: "2024-06-03T09:15:00"
 TO_DATE: "2024-06-04T10:30:00"
-COOLDOWN_MINUTES: 10
 MAX_DAILY_LOSS: -10000
 STALL_BAND_RANGE: 15
 STALL_CANDLE_COUNT: 6
 RETRACE_THRESHOLD: 0.4
 MOMENTUM_BODY_RATIO: 0.25
+entry_buffer: 0.5
 orb:
   sl_factor: 1.5
-  target_factor: 2.0
+  target_factor: 4.0
 vwap_rev:
   sl_mult: 0.8
-  target_mult: 3.5
+  target_mult: 4.0
   rr_threshold: 1.2
