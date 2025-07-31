@@ -68,8 +68,10 @@ class StrategyApplier:
 
                     df.loc[mask, 'orb_long_entry'] = high + entry_buffer
                     df.loc[mask, 'orb_short_entry'] = low - entry_buffer
-                    df.loc[mask, 'orb_sl'] = np.maximum(20, df.loc[mask, 'ATR'] * sl_factor)
-                    df.loc[mask, 'orb_target'] = df.loc[mask, 'orb_sl'] * target_factor
+                    atr_series = df.loc[mask, 'ATR'].fillna(20)  # default fallback
+                    orb_sl = np.maximum(20, atr_series * sl_factor)
+                    df.loc[mask, 'orb_sl'] = orb_sl
+                    df.loc[mask, 'orb_target'] = orb_sl * target_factor
                 else:
                     df.loc[df['date'].dt.date == date_val, ['orb_long_entry', 'orb_short_entry', 'orb_sl',
                                                             'orb_target']] = 0
@@ -127,6 +129,11 @@ class VWAPStrategy:
                 return TradeDecision(
                     date=None, signal=None, entry=None, sl=None, target=None,
                     valid=False, strategy=None, reason=f"ATR too low {atr} < 5")
+
+            if not should_enter_trade(df=pd.DataFrame([row]), idx=0):
+                return TradeDecision(
+                    date=None, signal=None, entry=None, sl=None, target=None,
+                    valid=False, strategy="VWAP_REV", reason="Filtered by momentum/volume/ATR")
 
             threshold_above = vwap + self.dev * entry
             threshold_below = vwap - self.dev * entry
@@ -200,7 +207,7 @@ class ORBStrategy:
             if pd.isna(atr) or atr < 10:  # Lower the threshold
                 return TradeDecision(
                     date=None, signal=None, entry=None, sl=None, target=None,
-                    valid=False, strategy=None, reason=f"ATR too low or missing {round(atr, 2)} < 10")
+                    valid=False, strategy=None, reason=f"ATR {round(atr, 2)} < 10 or missing")
 
             bullish = row['close_prev_1'] > row['open_prev_1']
             bearish = row['close_prev_1'] < row['open_prev_1']
