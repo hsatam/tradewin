@@ -249,7 +249,10 @@ class TradeExecutor:
 
                 # Example: check SL or target
                 current_price = df['close'].iloc[-1]
-                logger.info(f"📈 Price: {current_price:.2f} | SL: {self.state.stop_loss:.2f}")
+                if self.state.stop_loss is not None:
+                    logger.info(f"📈 Price: {current_price:.2f} | SL: {self.state.stop_loss:.2f}")
+                else:
+                    logger.info(f"📈 Price: {current_price:.2f} | SL: None")
 
                 # Call trailing SL manager
                 self.check_trailing_sl(df.index[-1], current_price)
@@ -275,17 +278,17 @@ class TradeExecutor:
                     self._update_exit_state(current_price)
                     self.state.last_exit_time = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
                     break
+
                 elif self.state.entry_time and not self.state.checked_post_entry:
                     df = get_data_func()
                     df = prepare_func(df)
                     if df is not None and len(df) > 5:
-                        passed = post_entry_health_check(df, self.state.entry_time)
+                        valid, passed = post_entry_health_check(df, self.state.entry_time)
                         self.state.checked_post_entry = True
-                        if not passed:
+                        if valid == "valid" and not passed:
                             logger.info("⚠️ Weak follow-through detected after entry. Exiting early.")
                             self.exit_trade(price=self.state.entry_price, reason="Weak post-entry momentum")
-
-                # Add your exit conditions here...
+                            break
 
                 time.sleep(interval)
 
