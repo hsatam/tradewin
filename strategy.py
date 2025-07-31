@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from datetime import time as dt_time
 from TradeDecision import TradeDecision
+from entry_filters import should_enter_trade
+
 from log_config import get_logger
 logger = get_logger()
 
@@ -109,8 +111,7 @@ class VWAPStrategy:
                 # Skip weak candles
                 return TradeDecision(
                     date=None, signal=None, entry=None, sl=None, target=None,
-                    valid=False, strategy=None, reason=f"Weak candle - Candle Range {round(candle_range,0)} and "
-                                                       f"body {round(body,2)} < {round(0.25 * candle_range,2)}")
+                    valid=False, strategy=None, reason=f"Weak candle {entry}")
 
             if pd.isna(entry) or pd.isna(atr):
                 return TradeDecision(
@@ -193,8 +194,7 @@ class ORBStrategy:
                 # Skip weak candles
                 return TradeDecision(
                     date=None, signal=None, entry=None, sl=None, target=None,
-                    valid=False, strategy=None, reason=f"Weak candle Candle Range {round(candle_range,0)} < 5 - "
-                                                       f"Body {round(body,2)} < {round(0.25 * candle_range, 2)}")
+                    valid=False, strategy=None, reason=f"Weak candle {row['close']}")
 
             atr = row['ATR']
             if pd.isna(atr) or atr < 10:  # Lower the threshold
@@ -215,6 +215,11 @@ class ORBStrategy:
 
             # --- LONG ---
             if row['high'] >= long_entry and bullish:
+                if not should_enter_trade(df=pd.DataFrame([row]), idx=0):
+                    return TradeDecision(
+                        date=None, signal=None, entry=None, sl=None, target=None,
+                        valid=False, strategy="ORB", reason="Filtered by momentum/volume/ATR")
+
                 dt = row['date']
                 entry = row['close']
                 sl = entry - row['orb_sl']
@@ -225,6 +230,11 @@ class ORBStrategy:
 
             # --- SHORT ---
             if row['low'] <= short_entry and bearish:
+                if not should_enter_trade(df=pd.DataFrame([row]), idx=0):
+                    return TradeDecision(
+                        date=None, signal=None, entry=None, sl=None, target=None,
+                        valid=False, strategy="ORB", reason="Filtered by momentum/volume/ATR")
+
                 dt = row['date']
                 entry = row['close']
                 sl = entry + row['orb_sl']
@@ -235,7 +245,7 @@ class ORBStrategy:
 
             return TradeDecision(
                 date=None, signal=None, entry=None, sl=None, target=None,
-                valid=False, strategy=None, reason="No ORB signal conditions met")
+                valid=False, strategy=None, reason="No ORB conditions met")
 
         except Exception as e:
             logger.error(f"ORB strategy error: {e}")
