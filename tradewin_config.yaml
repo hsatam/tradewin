@@ -32,3 +32,7 @@ vwap_rev:
   sl_mult: 0.8
   target_mult: 4.0
   rr_threshold: 1.2
+telegram:
+  enabled: true
+  bot_token: "7935530794:AAGEQhQGO1oIk58Mi6J3NYWoj3kUOGvDjaI"
+  chat_id: "6556590306"
