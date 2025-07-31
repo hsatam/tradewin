@@ -11,7 +11,14 @@ import traceback
 from backtester import Backtester, get_strategy_class
 from datetime import datetime
 from log_config import get_logger
-logger = get_logger()
+
+config = LoadTradeWinConfig("tradewin_config.yaml")
+
+logger = get_logger(
+    enable_telegram=config.TELEGRAM_ENABLED,
+    bot_token=config.TELEGRAM_BOT_TOKEN,
+    chat_id=config.TELEGRAM_CHAT_ID
+)
 
 
 def run_live_trading(live_config, live_kite):
@@ -26,8 +33,8 @@ def run_live_trading(live_config, live_kite):
     trade_manager = TradeExecutor(kite=kite)
     trade_manager.margins = margins
     market_data = MarketData(kite=live_kite, trade_manager=trade_manager, retries=5, backoff=2,
-                             entry_buffer=live_config.entry_buffer, sl_factor=live_config.sl_factor,
-                             target_factor=live_config.target_factor, sl_mult=live_config.vwap_sl_mult,
+                             entry_buffer=live_config.entry_buffer, sl_factor=live_config.orb_sl_factor,
+                             target_factor=live_config.orb_target_factor, sl_mult=live_config.vwap_sl_mult,
                              target_mult=live_config.vwap_target_mult, rr_threshold=live_config.vwap_rr_threshold)
 
     try:
@@ -171,7 +178,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", choices=["live", "backtest"], required=True, help="Execution mode")
     args = parser.parse_args()
 
-    config = LoadTradeWinConfig("tradewin_config.yaml")
+    # config = LoadTradeWinConfig("tradewin_config.yaml")
     client = KiteClient(api_key=config.API_KEY, api_secret=config.API_SECRET)
     kite = client.authenticate()
 
