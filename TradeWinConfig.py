@@ -14,6 +14,7 @@ class LoadTradeWinConfig:
         self.API_SECRET = None
         self.API_KEY = None
         self.WEEKEND_TESTING = None
+        self.SLEEP_INTERVAL = None
         self.DB_USER = None
         self.DB_PASS = None
         self.DB_NAME = None
@@ -27,7 +28,8 @@ class LoadTradeWinConfig:
         self.sl_factor = None
         self.target_factor = None
         self.COOLDOWN_MINUTES = None
-        self.MAX_DAILY_LOSS: None
+        self.MAX_DAILY_LOSS = None
+        self.strategy_mode = None
 
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -36,12 +38,14 @@ class LoadTradeWinConfig:
             self._config = yaml.safe_load(f)
             orb_config = self._config.get("orb", {})
             self.orb_sl_factor = orb_config.get("sl_factor", 1.5)
-            self.orb_target_factor = orb_config.get("target_factor", 2.0)
+            self.orb_target_factor = orb_config.get("target_factor", 4.0)
 
             vwap_config = self._config.get("vwap_rev", {})
             self.vwap_sl_mult = vwap_config.get("sl_mult", 0.8)
-            self.vwap_target_mult = vwap_config.get("target_mult", 3.5)
+            self.vwap_target_mult = vwap_config.get("target_mult", 4.0)
             self.vwap_rr_threshold = vwap_config.get("rr_threshold", 1.2)
+
+            self.strategy_mode = self._config.get("strategy_mode", "adaptive").upper()
 
         for key, value in self._config.items():
             setattr(self, key, value)
