@@ -36,16 +36,20 @@ class LoadTradeWinConfig:
 
         with open(config_path, 'r') as f:
             self._config = yaml.safe_load(f)
-            orb_config = self._config.get("orb", {})
-            self.orb_sl_factor = orb_config.get("sl_factor", 1.5)
-            self.orb_target_factor = orb_config.get("target_factor", 4.0)
 
-            vwap_config = self._config.get("vwap_rev", {})
-            self.vwap_sl_mult = vwap_config.get("sl_mult", 0.8)
-            self.vwap_target_mult = vwap_config.get("target_mult", 4.0)
-            self.vwap_rr_threshold = vwap_config.get("rr_threshold", 1.2)
+            self.orb_sl_factor = self._config.get("orb", {}).get("sl_factor", 1.5)
+            self.orb_target_factor = self._config.get("orb", {}).get("target_factor", 4.0)
+
+            self.vwap_sl_mult = self._config.get("vwap_rev", {}).get("sl_mult", 0.8)
+            self.vwap_target_mult = self._config.get("vwap_rev", {}).get("target_mult", 4.0)
+            self.vwap_rr_threshold = self._config.get("vwap_rev", {}).get("rr_threshold", 1.2)
 
             self.strategy_mode = self._config.get("strategy_mode", "adaptive").upper()
+
+            telegram_cfg = self._config.get("telegram", {})
+            self.TELEGRAM_ENABLED = telegram_cfg.get("enabled", False)
+            self.TELEGRAM_BOT_TOKEN = telegram_cfg.get("bot_token", "")
+            self.TELEGRAM_CHAT_ID = telegram_cfg.get("chat_id", "")
 
         for key, value in self._config.items():
             setattr(self, key, value)
